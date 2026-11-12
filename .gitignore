@@ -3,3 +3,6 @@ dist
 .superpowers
 *.log
 .vite
+
+# Local Netlify folder
+.netlify

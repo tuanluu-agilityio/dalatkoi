@@ -147,7 +147,7 @@ is given back after three good windows; the profile is never raised automaticall
 code-split from the title screen.
 
 ## Testing
-- **Unit (Vitest, 95 tests):** world model, koi simulation, cinematic timeline, walk controller,
+- **Unit (Vitest, 117 tests):** world model, weather model, shelter, koi simulation, cinematic timeline, walk controller,
   audio engine against a fake context, quality detection, adaptation rule, store, texture fallback.
 - **Static:** `tsc --noEmit`, production build.
 - **In-browser:** load, enter, each camera mode, walking, notes, panels, phone-width layout.
