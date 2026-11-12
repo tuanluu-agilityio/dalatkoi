@@ -9,6 +9,7 @@ import { SCATTER } from '../../world/scatter';
 import { foliageMaterial } from '../shared/cards';
 import { Instances, trs, type InstanceSpec } from '../shared/Instances';
 import { leafMass } from './foliage';
+import { applyWetness } from '../weather/wetness';
 import { applyWind, windDepthMaterial, type WindOptions } from './wind';
 
 const SWAY: WindOptions = { strength: 0.1, bend: 'smoothstep(0.6, 4.5, position.y)' };
@@ -62,7 +63,10 @@ function buildTree(seed: number, height: number, spread: number): { wood: THREE.
 export function SmallTrees({ profile }: { profile: QualityProfile }) {
   const assets = useMemo(() => {
     const bark = getPBR('bark', 1, 1, profile.anisotropy);
-    const wood = applyWind(new THREE.MeshStandardMaterial({ map: bark.map, normalMap: bark.normalMap, color: '#8f7d70', roughness: 1 }), SWAY);
+    const wood = applyWetness(
+      applyWind(new THREE.MeshStandardMaterial({ map: bark.map, normalMap: bark.normalMap, color: '#8f7d70', roughness: 1 }), SWAY),
+      { darken: 0.66, roughness: 0.45, facing: false },
+    );
     const woodDepth = windDepthMaterial(SWAY);
     const kinds = [
       { geo: buildTree(1, 3.4, 2.5), tex: leafSprayTexture([86, 20, 16], [176, 58, 30], 21, 190, 0.075) },

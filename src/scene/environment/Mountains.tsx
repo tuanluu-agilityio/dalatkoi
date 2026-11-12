@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import * as THREE from 'three';
 import { fbm2 } from '../../world/noise';
-import { HAZE_COLOR } from '../lighting/SkyDome';
+import { HAZE_COLOR, HAZE_MORNING } from '../lighting/SkyDome';
+import { weatherUniforms } from '../weather/uniforms';
 
 interface Ridge {
   radius: number;
@@ -27,7 +28,7 @@ function ridgeGeometry(r: Ridge): THREE.BufferGeometry {
   const col: number[] = [];
   const idx: number[] = [];
   const top = new THREE.Color(r.color);
-  const haze = HAZE_COLOR;
+  const haze = HAZE_MORNING;
   const c = new THREE.Color();
   for (let i = 0; i <= steps; i++) {
     const a = (i / steps) * Math.PI * 2;
@@ -60,10 +61,18 @@ function ridgeGeometry(r: Ridge): THREE.BufferGeometry {
 /** Layered, haze-separated ridge lines that close the horizon. */
 export function Mountains() {
   const ridges = useMemo(() => RIDGES.map(ridgeGeometry), []);
-  const material = useMemo(
-    () => new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide }),
-    [],
-  );
+  const material = useMemo(() => {
+    const mat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide });
+    // in rain the ridges sink most of the way into the grey haze
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uHaze = { value: HAZE_COLOR };
+      shader.uniforms.uRain = weatherUniforms.uRain;
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform vec3 uHaze;\nuniform float uRain;')
+        .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = mix(diffuseColor.rgb, uHaze, uRain * 0.8);');
+    };
+    return mat;
+  }, []);
   return (
     <group>
       {ridges.map((geo, i) => (

@@ -5,13 +5,14 @@ import { CABIN, DECK } from '../../world/layout';
 import { fbm2 } from '../../world/noise';
 import { createRng } from '../../world/rng';
 import { HD, HW, RIDGE_Y, WALL_TOP } from './body';
+import { applyWetness } from '../weather/wetness';
 import { Builder } from './builder';
 
 const TILE_W = 0.265;
 const TILE_L = 0.44;
 const EXPOSE = 0.3;
 
-interface Slope {
+export interface Slope {
   zTop: number;
   yTop: number;
   zBottom: number;
@@ -30,6 +31,16 @@ const SLOPES: Slope[] = [
   { zTop: 0, yTop: RIDGE_Y, zBottom: -(HD + CABIN.roofOverhang), pitch: CABIN.roofPitch, dir: -1, xHalf: HW + MAIN_OVERHANG_X },
   { zTop: HD + 0.04, yTop: VERANDA_TOP_Y, zBottom: DECK.z1 + 0.55, pitch: VERANDA_PITCH, dir: 1, xHalf: HW + 0.4 },
 ];
+
+/** The three roof planes (main front, main back, veranda), for anything that needs to know where the roof is. */
+export const ROOF_SLOPES: readonly Slope[] = SLOPES;
+
+/** Lower edges that shed water onto the ground, in the cabin frame: the veranda's front lip and the back eave. */
+export const EAVES = [SLOPES[2], SLOPES[1]].map((s) => ({
+  z: s.zBottom,
+  y: s.yTop - Math.abs(s.zBottom - s.zTop) * s.pitch - 0.03,
+  xHalf: s.xHalf,
+}));
 
 /** A single barrel tile: a shallow arch, slightly tapered. */
 function tileGeometry(): THREE.BufferGeometry {
@@ -138,7 +149,7 @@ export function Roof({ materials }: { materials: Record<string, THREE.Material> 
     return {
       tileGeo: tileGeometry(),
       ridgeGeo: ridgeGeometry(),
-      clay: new THREE.MeshStandardMaterial({ map: clayTexture(), roughness: 0.84, metalness: 0, side: THREE.DoubleSide }),
+      clay: applyWetness(new THREE.MeshStandardMaterial({ map: clayTexture(), roughness: 0.84, metalness: 0, side: THREE.DoubleSide }), { darken: 0.7, roughness: 0.2, facing: false }),
       transforms,
       colors,
       ridgeTransforms,

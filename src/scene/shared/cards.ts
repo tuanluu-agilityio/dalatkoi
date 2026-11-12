@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { applyWind, windDepthMaterial, type WindOptions } from '../vegetation/wind';
+import { applyWetness } from '../weather/wetness';
 
 /**
  * One textured card standing on its base (y = 0 … height), `segments` rows so
@@ -59,6 +60,9 @@ export function sphereNormals(geo: THREE.BufferGeometry, centre: THREE.Vector3, 
   }
 }
 
+/** How leaves take the rain: a little darker and richer, with a wet shine. */
+export const LEAF_WET = { facing: false, darken: 0.84, deepen: 1.22, roughness: 0.26 } as const;
+
 export interface FoliageOptions {
   map: THREE.Texture;
   wind: WindOptions;
@@ -101,6 +105,7 @@ export function foliageMaterial(opts: FoliageOptions): { material: THREE.MeshSta
     material.customProgramCacheKey = () => `foliage:${translucency}`;
   }
   applyWind(material, opts.wind);
+  applyWetness(material, LEAF_WET);
   const depth = windDepthMaterial(opts.wind, opts.map, opts.alphaTest ?? 0.42);
   return { material, depth };
 }

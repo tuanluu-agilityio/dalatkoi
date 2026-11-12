@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 import type { QualityLevel } from '../config/quality';
+import type { RainIntensity, WeatherMode } from '../weather/weather';
 
 export type Phase = 'loading' | 'ready' | 'intro' | 'explore';
 export type CameraMode = 'walk' | 'cinematic' | 'orbit';
-export type VolumeBus = 'master' | 'ambient' | 'environment' | 'footsteps';
+export type VolumeBus = 'master' | 'ambient' | 'environment' | 'footsteps' | 'rain';
 
 export interface AppState {
   phase: Phase;
@@ -22,6 +23,11 @@ export interface AppState {
   noteOpen: boolean;
   pointerLocked: boolean;
   isTouch: boolean;
+  weather: WeatherMode;
+  rainIntensity: RainIntensity;
+  /** Thunder (sound) and lightning (light) can be switched off separately. */
+  thunder: boolean;
+  lightning: boolean;
 
   setSceneReady: () => void;
   setLoadProgress: (value: number) => void;
@@ -37,7 +43,15 @@ export interface AppState {
   setNoteOpen: (open: boolean) => void;
   setPointerLocked: (locked: boolean) => void;
   setIsTouch: (touch: boolean) => void;
+  setWeather: (mode: WeatherMode) => void;
+  toggleWeather: () => void;
+  setRainIntensity: (intensity: RainIntensity) => void;
+  setThunder: (on: boolean) => void;
+  setLightning: (on: boolean) => void;
 }
+
+/** Flashes are off by default for visitors who ask their system for reduced motion. */
+const calmMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0);
 
@@ -50,11 +64,15 @@ export const useStore = create<AppState>()((set, get) => ({
   autoQuality: true,
   dprScale: 1,
   muted: false,
-  volumes: { master: 0.8, ambient: 0.8, environment: 0.85, footsteps: 0.7 },
+  volumes: { master: 0.8, ambient: 0.8, environment: 0.85, footsteps: 0.7, rain: 0.85 },
   hint: null,
   noteOpen: false,
   pointerLocked: false,
   isTouch: false,
+  weather: 'morning',
+  rainIntensity: 'moderate',
+  thunder: true,
+  lightning: !calmMotion,
 
   setSceneReady: () => set((s) => ({ sceneReady: true, loadProgress: 1, phase: s.phase === 'loading' ? 'ready' : s.phase })),
   setLoadProgress: (value) => {
@@ -84,4 +102,9 @@ export const useStore = create<AppState>()((set, get) => ({
   setNoteOpen: (open) => set({ noteOpen: open }),
   setPointerLocked: (locked) => set({ pointerLocked: locked }),
   setIsTouch: (touch) => set({ isTouch: touch }),
+  setWeather: (mode) => set({ weather: mode }),
+  toggleWeather: () => set((s) => ({ weather: s.weather === 'rain' ? 'morning' : 'rain' })),
+  setRainIntensity: (intensity) => set({ rainIntensity: intensity }),
+  setThunder: (on) => set({ thunder: on }),
+  setLightning: (on) => set({ lightning: on }),
 }));

@@ -8,6 +8,7 @@ import { createRng } from '../../world/rng';
 import { groundHeight } from '../../world/terrain';
 import { HAZE_COLOR } from '../lighting/SkyDome';
 import { windUniforms } from '../vegetation/wind';
+import { weatherUniforms } from '../weather/uniforms';
 
 const SUN = new THREE.Vector3(...SUN_DIR);
 
@@ -79,6 +80,7 @@ export function Mist({ profile }: { profile: QualityProfile }) {
         uSun: { value: SUN },
         uHaze: { value: HAZE_COLOR },
         uOpacity: { value: 0.3 },
+        uRain: weatherUniforms.uRain,
       },
       vertexShader: /* glsl */ `
         attribute vec3 aPos; attribute vec2 aSize; attribute float aSeed;
@@ -98,7 +100,7 @@ export function Mist({ profile }: { profile: QualityProfile }) {
           gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
         }`,
       fragmentShader: /* glsl */ `
-        uniform sampler2D uNoise; uniform float uTime, uOpacity; uniform vec3 uSun, uHaze;
+        uniform sampler2D uNoise; uniform float uTime, uOpacity, uRain; uniform vec3 uSun, uHaze;
         varying vec2 vUv; varying float vSeed; varying float vDist; varying vec3 vDir;
         void main() {
           vec2 q = vUv - 0.5;
@@ -107,11 +109,12 @@ export function Mist({ profile }: { profile: QualityProfile }) {
           // soft on every edge, densest toward the ground
           float shape = smoothstep(0.5, 0.12, abs(q.x)) * smoothstep(0.5, 0.2, q.y) * smoothstep(-0.5, -0.34, q.y);
           shape *= mix(1.0, 0.55, smoothstep(-0.3, 0.4, q.y));
-          float a = shape * (0.35 + 0.65 * n) * (0.6 + 0.4 * m) * uOpacity;
+          // rain thickens the mist between the trees
+          float a = shape * (0.35 + 0.65 * n) * (0.6 + 0.4 * m) * uOpacity * (1.0 + 0.85 * uRain);
           // never a hard plane in front of the lens, and thinner far away where the fog already is
           a *= smoothstep(2.0, 12.0, vDist) * (1.0 - smoothstep(70.0, 130.0, vDist) * 0.5);
           float toSun = pow(max(dot(vDir, uSun), 0.0), 2.0);
-          vec3 col = mix(uHaze * 1.02, vec3(1.25, 1.08, 0.86), toSun * 0.8);
+          vec3 col = mix(uHaze * 1.02, vec3(1.25, 1.08, 0.86), toSun * 0.8 * (1.0 - uRain));
           gl_FragColor = vec4(col, a);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
@@ -162,7 +165,7 @@ export function SunShafts({ profile }: { profile: QualityProfile }) {
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
-      uniforms: { uTime: windUniforms.uTime, uSun: { value: SUN }, uGust: windUniforms.uGust },
+      uniforms: { uTime: windUniforms.uTime, uSun: { value: SUN }, uGust: windUniforms.uGust, uRain: weatherUniforms.uRain },
       vertexShader: /* glsl */ `
         attribute vec3 aStart; attribute vec2 aDims; attribute float aSeed;
         uniform vec3 uSun;
@@ -179,7 +182,7 @@ export function SunShafts({ profile }: { profile: QualityProfile }) {
           gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
         }`,
       fragmentShader: /* glsl */ `
-        uniform float uTime, uGust;
+        uniform float uTime, uGust, uRain;
         varying vec2 vUv; varying float vSeed; varying float vFacing; varying float vDist;
         void main() {
           float ax = (vUv.x - 0.5) * 3.4;
@@ -189,7 +192,7 @@ export function SunShafts({ profile }: { profile: QualityProfile }) {
           float along = smoothstep(0.0, 0.3, vUv.y) * smoothstep(1.0, 0.55, vUv.y);
           float breathe = 0.75 + 0.25 * sin(uTime * 0.23 + vSeed * 30.0);
           float a = across * along * breathe * (0.05 + 0.2 * pow(vFacing, 1.6));
-          a *= smoothstep(1.5, 7.0, vDist);
+          a *= smoothstep(1.5, 7.0, vDist) * (1.0 - uRain); // no shafts under cloud
           gl_FragColor = vec4(vec3(1.0, 0.86, 0.62) * a, a);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
@@ -226,7 +229,7 @@ export function Motes({ profile }: { profile: QualityProfile }) {
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
-      uniforms: { uTime: windUniforms.uTime, uSprite: { value: sprite }, uSun: { value: SUN }, uScale: { value: 1 } },
+      uniforms: { uTime: windUniforms.uTime, uSprite: { value: sprite }, uSun: { value: SUN }, uScale: { value: 1 }, uRain: weatherUniforms.uRain },
       vertexShader: /* glsl */ `
         attribute float aSeed; uniform float uTime, uScale; uniform vec3 uSun;
         varying float vAlpha;
@@ -246,9 +249,10 @@ export function Motes({ profile }: { profile: QualityProfile }) {
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: /* glsl */ `
-        uniform sampler2D uSprite; varying float vAlpha;
+        uniform sampler2D uSprite; uniform float uRain; varying float vAlpha;
         void main() {
-          float a = texture2D(uSprite, gl_PointCoord).a * vAlpha;
+          // rain washes the pollen out of the air
+          float a = texture2D(uSprite, gl_PointCoord).a * vAlpha * (1.0 - uRain);
           gl_FragColor = vec4(vec3(1.0, 0.9, 0.68) * a, a);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>

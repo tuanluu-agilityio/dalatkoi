@@ -6,6 +6,8 @@ import { SCATTER } from '../../world/scatter';
 import { foliageMaterial } from '../shared/cards';
 import { Instances, trs, type InstanceSpec } from '../shared/Instances';
 import { leafMass } from './foliage';
+import { LEAF_WET } from '../shared/cards';
+import { applyWetness } from '../weather/wetness';
 import { applyWind, windDepthMaterial, type WindOptions } from './wind';
 
 /** Soil chemistry decides the colour: blue and violet in acid highland soil, pink where it is limed. */
@@ -30,7 +32,7 @@ export function Hydrangeas() {
     headGeo.scale(1, 0.82, 1);
     const tex = hydrangeaTexture();
     tex.repeat.set(3, 2);
-    const headMat = applyWind(new THREE.MeshStandardMaterial({ map: tex, bumpMap: tex, bumpScale: 1.6, roughness: 0.75 }), HEAD_SWAY);
+    const headMat = applyWetness(applyWind(new THREE.MeshStandardMaterial({ map: tex, bumpMap: tex, bumpScale: 1.6, roughness: 0.75 }), HEAD_SWAY), LEAF_WET);
     const headDepth = windDepthMaterial(HEAD_SWAY);
     return { leafGeo, leaves, headGeo, headMat, headDepth };
   }, []);

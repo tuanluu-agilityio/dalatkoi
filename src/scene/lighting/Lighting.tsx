@@ -1,16 +1,32 @@
 import { Environment } from '@react-three/drei';
-import { useThree } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { QualityProfile } from '../../config/quality';
+import { runtime } from '../../state/runtime';
 import { CLEARING, SUN_DIR } from '../../world/layout';
 import { SkyDome } from './SkyDome';
 
 const SUN_COLOR = new THREE.Color('#ffd7a3');
+const SUN_INTENSITY = 3.4;
+const FILL_INTENSITY = 0.5;
+const ENV_INTENSITY = 0.62;
+const SKY_FILL = new THREE.Color('#c9dcec');
+const GROUND_FILL = new THREE.Color('#55603c');
+/** Under cloud: the sun is a weak, cool key and most of the light comes from the whole sky. */
+const OVERCAST = {
+  sun: new THREE.Color('#c3ccd6'),
+  sunIntensity: 0.5,
+  sky: new THREE.Color('#aebccb'),
+  ground: new THREE.Color('#4c564a'),
+  fill: 1.25,
+  env: 0.5,
+};
 
 /** Morning sun (the only shadow caster), sky fill, and image-based lighting from the sky dome. */
 export function Lighting({ profile }: { profile: QualityProfile }) {
   const light = useRef<THREE.DirectionalLight>(null);
+  const fill = useRef<THREE.HemisphereLight>(null);
   const scene = useThree((s) => s.scene);
   const target = useMemo(() => new THREE.Object3D(), []);
 
@@ -37,19 +53,34 @@ export function Lighting({ profile }: { profile: QualityProfile }) {
     };
   }, [scene, target]);
 
+  // weather: blend between the morning rig and an overcast one; lightning briefly lifts the fill
+  useFrame(() => {
+    const l = light.current;
+    const h = fill.current;
+    if (!l || !h) return;
+    const r = runtime.rain;
+    const flash = runtime.flash;
+    l.intensity = THREE.MathUtils.lerp(SUN_INTENSITY, OVERCAST.sunIntensity, r);
+    l.color.copy(SUN_COLOR).lerp(OVERCAST.sun, r);
+    h.intensity = THREE.MathUtils.lerp(FILL_INTENSITY, OVERCAST.fill, r) + flash * 1.5;
+    h.color.copy(SKY_FILL).lerp(OVERCAST.sky, r);
+    h.groundColor.copy(GROUND_FILL).lerp(OVERCAST.ground, r);
+    scene.environmentIntensity = THREE.MathUtils.lerp(ENV_INTENSITY, OVERCAST.env, r) + flash * 0.4;
+  });
+
   return (
     <>
       <directionalLight
         ref={light}
         color={SUN_COLOR}
-        intensity={3.4}
+        intensity={SUN_INTENSITY}
         castShadow
         shadow-mapSize-width={profile.shadowMapSize}
         shadow-mapSize-height={profile.shadowMapSize}
       />
-      <hemisphereLight args={['#c9dcec', '#55603c', 0.5]} />
-      <Environment resolution={profile.reflectionSize ? 256 : 128} frames={1} environmentIntensity={0.62}>
-        <SkyDome radius={50} clouds={false} />
+      <hemisphereLight ref={fill} args={[SKY_FILL, GROUND_FILL, FILL_INTENSITY]} />
+      <Environment resolution={profile.reflectionSize ? 256 : 128} frames={1} environmentIntensity={ENV_INTENSITY}>
+        <SkyDome radius={50} clouds={false} weather={false} />
       </Environment>
     </>
   );

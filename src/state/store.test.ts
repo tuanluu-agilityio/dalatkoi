@@ -58,4 +58,38 @@ describe('load progress', () => {
     useStore.getState().setSceneReady();
     expect(useStore.getState().loadProgress).toBe(1);
   });
+  it('starts on a dry morning and switches weather in any phase', () => {
+    const s = useStore.getState();
+    expect(s.weather).toBe('morning');
+    expect(s.rainIntensity).toBe('moderate');
+    s.toggleWeather();
+    expect(useStore.getState().weather).toBe('rain');
+    s.setRainIntensity('heavy');
+    expect(useStore.getState().rainIntensity).toBe('heavy');
+    s.toggleWeather();
+    expect(useStore.getState().weather).toBe('morning');
+    expect(useStore.getState().rainIntensity).toBe('heavy');
+  });
+
+  it('leaves the camera alone when the weather changes', () => {
+    const before = useStore.getState();
+    before.setWeather('rain');
+    const after = useStore.getState();
+    expect(after.cameraMode).toBe(before.cameraMode);
+    expect(after.phase).toBe(before.phase);
+    expect(after.quality).toBe(before.quality);
+  });
+
+  it('switches thunder and lightning independently, and has a rain volume', () => {
+    const s = useStore.getState();
+    s.setThunder(false);
+    expect(useStore.getState().thunder).toBe(false);
+    expect(useStore.getState().lightning).toBe(true);
+    s.setLightning(false);
+    s.setThunder(true);
+    expect(useStore.getState().thunder).toBe(true);
+    expect(useStore.getState().lightning).toBe(false);
+    s.setVolume('rain', 0.3);
+    expect(useStore.getState().volumes.rain).toBe(0.3);
+  });
 });

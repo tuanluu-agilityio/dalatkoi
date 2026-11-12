@@ -1,8 +1,8 @@
 import type { VolumeBus } from '../state/store';
 import type { Surface } from '../world/surfaces';
-import { createSpout, createWind, type Bed } from './synth/beds';
+import { createRain, createSpout, createWind, type Bed, type RainBed } from './synth/beds';
 import { impulseResponse, noiseBuffer } from './synth/noise';
-import { birdsong, chime, creak, drip, footstep, plop, type Buffers } from './synth/voices';
+import { birdsong, chime, creak, drip, footstep, plop, raindrop, thunder, type Buffers, type Raindrop } from './synth/voices';
 
 export type Volumes = Record<VolumeBus, number>;
 
@@ -23,15 +23,42 @@ export interface WorldSignals {
   embodied: boolean;
 }
 
+export interface WeatherSignals {
+  /** 0..1 presence of the rain. */
+  rain: number;
+  /** 0..1 intensity: drizzle … heavy. */
+  level: number;
+  /** 0..1 wetness of surfaces: the eaves keep dripping for a while after the rain. */
+  wet: number;
+  /** 0..1 how much roof is over the listener, and 1 when inside the cabin. */
+  roof: number;
+  indoors: number;
+}
+
 /** World positions of the fixed sound sources. */
 export interface SoundSources {
   spout: [number, number, number];
   chime: [number, number, number];
   cabin: [number, number, number];
   waterLevel: number;
+  /** Where rain has its own sound: the cabin roof, the middle of the pond, the middle of the bridge. */
+  roof: [number, number, number];
+  pond: [number, number, number];
+  bridge: [number, number, number];
+  /** The two ends of the veranda's dripping edge. */
+  eave: [[number, number, number], [number, number, number]];
 }
 
-const DEFAULT_SOURCES: SoundSources = { spout: [-8, -0.2, 0], chime: [9, 2.7, -5], cabin: [8, 1.5, -8.5], waterLevel: -0.18 };
+const DEFAULT_SOURCES: SoundSources = {
+  spout: [-8, -0.2, 0],
+  chime: [9, 2.7, -5],
+  cabin: [8, 1.5, -8.5],
+  waterLevel: -0.18,
+  roof: [8, 4, -8.5],
+  pond: [-2.5, -0.18, 3.5],
+  bridge: [4.5, 0.6, 3.5],
+  eave: [[4.5, 2.9, -4], [13, 2.9, -1.4]],
+};
 
 const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0);
 
@@ -46,10 +73,15 @@ export function busGains(volumes: Volumes, muted: boolean): Volumes {
     ambient: curve(volumes.ambient),
     environment: curve(volumes.environment),
     footsteps: curve(volumes.footsteps),
+    rain: curve(volumes.rain),
   };
 }
 
 const MAX_VOICES = 18;
+/** Rain's one-shots have a budget of their own, so a downpour never crowds out a footstep. */
+const MAX_RAIN_VOICES = 8;
+const DRY: WeatherSignals = { rain: 0, level: 0, wet: 0, roof: 0, indoors: 0 };
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
 /**
@@ -60,7 +92,7 @@ const rand = (a: number, b: number) => a + Math.random() * (b - a);
  */
 export class AudioEngine {
   started = false;
-  levels: Volumes = busGains({ master: 0.8, ambient: 0.8, environment: 0.85, footsteps: 0.7 }, false);
+  levels: Volumes = busGains({ master: 0.8, ambient: 0.8, environment: 0.85, footsteps: 0.7, rain: 0.85 }, false);
 
   private ctx: AudioContext | null = null;
   private buses: Record<VolumeBus, GainNode> | null = null;
@@ -75,6 +107,14 @@ export class AudioEngine {
   private timers = { bird: 2.5, drip: 0.4, creak: 14, chime: 6 };
   /** Context time at which the opening fade-in ends. */
   private fadeInEnd = 0;
+  private rainBed: RainBed | null = null;
+  /** Low-pass after the rain bus: closes under a roof, and further indoors. */
+  private rainMuffle: BiquadFilterNode | null = null;
+  private thunderOut: GainNode | null = null;
+  private thunderOn = true;
+  private weather: WeatherSignals = DRY;
+  private rainVoices: number[] = [];
+  private rainTimers = { eave: 0.5, pond: 0.3, leaf: 0.4, wood: 0.6 };
 
   /** Where the fixed sources are. Takes effect for sources created after the call, so set it before `start`. */
   setSources(sources: SoundSources): void {
@@ -121,7 +161,17 @@ export class AudioEngine {
       g.connect(master);
       return g;
     };
-    this.buses = { master, ambient: bus(this.levels.ambient), environment: bus(this.levels.environment), footsteps: bus(this.levels.footsteps) };
+    // rain passes through a low-pass on its way out, so shelter can soften it
+    const muffle = ctx.createBiquadFilter();
+    muffle.type = 'lowpass';
+    muffle.frequency.value = 18000;
+    muffle.Q.value = 0.4;
+    muffle.connect(master);
+    this.rainMuffle = muffle;
+    const rain = ctx.createGain();
+    rain.gain.value = this.levels.rain;
+    rain.connect(muffle);
+    this.buses = { master, ambient: bus(this.levels.ambient), environment: bus(this.levels.environment), footsteps: bus(this.levels.footsteps), rain };
 
     this.buffers = { white: noiseBuffer(ctx, 3, 'white'), pink: noiseBuffer(ctx, 5, 'pink'), brown: noiseBuffer(ctx, 4, 'brown') };
 
@@ -144,6 +194,24 @@ export class AudioEngine {
       this.spoutOut = spoutPanner;
     }
 
+    const at = (p: [number, number, number], refDistance: number, rolloff: number) => {
+      const node = this.panner(p[0], p[1], p[2], refDistance, rolloff);
+      node?.connect(rain);
+      return node;
+    };
+    this.rainBed = createRain(
+      ctx,
+      { around: rain, roof: at(this.sources.roof, 4.5, 1.3), wood: at(this.sources.bridge, 2.2, 1.6), pond: at(this.sources.pond, 3.5, 1.5) },
+      this.buffers,
+    );
+    this.thunderOut = ctx.createGain();
+    this.thunderOut.gain.value = this.thunderOn ? 1 : 0;
+    this.thunderOut.connect(master);
+    const rumble = ctx.createGain();
+    rumble.gain.value = 0.3;
+    this.thunderOut.connect(rumble);
+    rumble.connect(this.reverb);
+
     // rise gently out of silence rather than switching on
     master.gain.setValueAtTime(0, ctx.currentTime);
     this.fadeInEnd = ctx.currentTime + 2.5;
@@ -151,11 +219,11 @@ export class AudioEngine {
   }
 
   /** A positioned source. HRTF panning lets headphones place it around the listener's head. */
-  private panner(x: number, y: number, z: number, refDistance: number, rolloff: number): PannerNode | null {
+  private panner(x: number, y: number, z: number, refDistance: number, rolloff: number, model: PanningModelType = 'HRTF'): PannerNode | null {
     const ctx = this.ctx;
     if (!ctx) return null;
     const p = ctx.createPanner();
-    p.panningModel = 'HRTF';
+    p.panningModel = model;
     p.distanceModel = 'inverse';
     p.refDistance = refDistance;
     p.rolloffFactor = rolloff;
@@ -180,6 +248,19 @@ export class AudioEngine {
     p.connect(s);
     s.connect(this.reverb);
     return p;
+  }
+
+  /** A raindrop landing at a point: cheaper panning than the other voices, and routed through the rain bus. */
+  private rainDrop(kind: Raindrop, x: number, y: number, z: number, refDistance: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.buses || !this.buffers) return;
+    const now = ctx.currentTime;
+    this.rainVoices = this.rainVoices.filter((end) => end > now);
+    if (this.rainVoices.length >= MAX_RAIN_VOICES) return;
+    const p = this.panner(x, y, z, refDistance, 1.3, 'equalpower');
+    if (!p) return;
+    p.connect(this.buses.rain);
+    this.rainVoices.push(now + raindrop(ctx, p, this.buffers, kind));
   }
 
   /** Reserve a voice. False when too many one-shots are already sounding. */
@@ -208,6 +289,75 @@ export class AudioEngine {
     }
   }
 
+  /** The weather right now. Safe to call every frame; takes effect in `update`. */
+  setWeather(weather: WeatherSignals): void {
+    this.weather = weather;
+  }
+
+  /** Thunder can be switched off on its own; a roll already under way fades out. */
+  setThunderEnabled(on: boolean): void {
+    this.thunderOn = on;
+    if (this.ctx && this.thunderOut) this.thunderOut.gain.setTargetAtTime(on ? 1 : 0, this.ctx.currentTime, 0.15);
+  }
+
+  /** A strike somewhere beyond the hills: the sound arrives `delay` seconds later. */
+  thunder(delay: number, strength: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.buffers || !this.thunderOut || !this.thunderOn) return;
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = rand(-0.6, 0.6);
+    pan.connect(this.thunderOut);
+    // a roof takes the edge off it; walls take more
+    const heard = clamp01(strength) * (1 - 0.15 * this.weather.roof - 0.3 * this.weather.indoors);
+    thunder(ctx, pan, this.buffers, heard, Number.isFinite(delay) ? Math.max(0, delay) : 0);
+  }
+
+  /** Rain: the continuous layers, the shelter filter, and single drops landing around the listener. */
+  private updateRain(step: number, pose: ListenerPose, gust: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.rainBed || !this.rainMuffle) return;
+    const w = this.weather;
+    const amount = clamp01(w.rain);
+    const level = clamp01(w.level);
+    const roof = clamp01(w.roof);
+    const indoors = clamp01(w.indoors);
+    this.rainBed.update({ amount, level, roof, indoors, gust });
+    this.rainMuffle.frequency.setTargetAtTime(lerp(lerp(18000, 6500, roof), 950, indoors), ctx.currentTime, 0.25);
+
+    const pace = 0.35 + level;
+    const timers = this.rainTimers;
+    const wet = clamp01(w.wet);
+    if (wet > 0.1) {
+      timers.eave -= step;
+      if (timers.eave <= 0) {
+        timers.eave = rand(0.1, 0.5) / (pace * wet);
+        const [a, b] = this.sources.eave;
+        const k = Math.random();
+        this.rainDrop('eave', lerp(a[0], b[0], k), 0.2, lerp(a[2], b[2], k), 1.6);
+      }
+    }
+    if (amount < 0.1) return;
+    timers.pond -= step;
+    if (timers.pond <= 0) {
+      timers.pond = rand(0.08, 0.35) / (pace * amount);
+      const [x, y, z] = this.sources.pond;
+      this.rainDrop('water', x + rand(-6, 6), y, z + rand(-3.5, 3.5), 2.2);
+    }
+    timers.wood -= step;
+    if (timers.wood <= 0) {
+      timers.wood = rand(0.15, 0.6) / (pace * amount);
+      const [x, y, z] = this.sources.bridge;
+      this.rainDrop('wood', x + rand(-0.6, 0.6), y, z + rand(-3, 3), 1.8);
+    }
+    timers.leaf -= step;
+    if (timers.leaf <= 0 && indoors < 0.5) {
+      timers.leaf = rand(0.1, 0.45) / (pace * amount);
+      const a = Math.random() * Math.PI * 2;
+      const d = rand(1.5, 6);
+      this.rainDrop('leaf', pose.x + Math.cos(a) * d, pose.y + rand(-1.2, 3), pose.z + Math.sin(a) * d, 2);
+    }
+  }
+
   /** Per frame: move the listener, breathe the wind, and let the place make its occasional sounds. */
   update(dt: number, pose: ListenerPose, world: WorldSignals): void {
     const ctx = this.ctx;
@@ -233,16 +383,19 @@ export class AudioEngine {
 
     const gust = clamp01(world.gust);
     this.wind?.update(gust);
+    this.updateRain(step, pose, gust);
+    const rain = clamp01(this.weather.rain);
 
     const timers = this.timers;
     timers.bird -= step;
     if (timers.bird <= 0) {
-      timers.bird = rand(1.6, 6.5);
+      // birds sit out the rain, calling only now and then
+      timers.bird = rand(1.6, 6.5) * (1 + 5 * rain);
       // somewhere up in the crowns around the clearing
       const a = Math.random() * Math.PI * 2;
       const d = rand(14, 44);
       const out = this.claim(2) ? this.placed(Math.cos(a) * d, rand(7, 19), 2 + Math.sin(a) * d, 9, 0.5) : null;
-      if (out) birdsong(ctx, out, rand(0.16, 0.34));
+      if (out) birdsong(ctx, out, rand(0.16, 0.34) * (1 - 0.45 * rain));
     }
 
     timers.drip -= step;
@@ -305,6 +458,10 @@ export class AudioEngine {
     this.wind = null;
     this.spoutOut = null;
     this.reverb = null;
+    this.rainBed = null;
+    this.rainMuffle = null;
+    this.thunderOut = null;
+    this.rainVoices = [];
     this.voices = [];
     this.started = false;
   }

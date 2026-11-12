@@ -20,6 +20,10 @@ import { Lighting } from './lighting/Lighting';
 import { HAZE_COLOR, SkyDome } from './lighting/SkyDome';
 import { Vegetation } from './vegetation/Vegetation';
 import { WindClock } from './vegetation/wind';
+import { Drips } from './weather/Drips';
+import { Rain } from './weather/Rain';
+import { Splashes } from './weather/Splashes';
+import { WeatherController } from './weather/WeatherController';
 
 /** Flags the scene as ready once textures have settled and a few frames have been drawn. */
 function ReadySignal() {
@@ -87,7 +91,7 @@ function ReflectionLayers(): null {
   return null;
 }
 
-/** Dev-only: `?off=post,atmo,veg,koi,pond,cabin` disables systems for bisecting. */
+/** Dev-only: `?off=post,atmo,veg,koi,pond,cabin,rain` disables systems for bisecting. */
 const OFF = new Set(import.meta.env.DEV ? (new URLSearchParams(window.location.search).get('off') ?? '').split(',') : []);
 
 export default function Experience() {
@@ -117,6 +121,7 @@ export default function Experience() {
       }}
     >
       <WindClock />
+      <WeatherController />
       <CameraRig />
       <ReflectionLayers />
       <Lighting profile={profile} />
@@ -130,6 +135,13 @@ export default function Experience() {
         {!OFF.has('veg') && <Vegetation profile={profile} />}
         {!OFF.has('atmo') && <Atmosphere profile={profile} />}
       </Suspense>
+      {!OFF.has('rain') && (
+        <>
+          <Rain profile={profile} />
+          <Splashes profile={profile} />
+          <Drips profile={profile} />
+        </>
+      )}
       {!OFF.has('post') && <PostFX profile={profile} />}
       <PoiWatcher />
       <AudioSync />

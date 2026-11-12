@@ -6,6 +6,7 @@ import { fbm2 } from '../../world/noise';
 import { createRng } from '../../world/rng';
 import { groundHeight } from '../../world/terrain';
 import { patch } from '../shaders/noise';
+import { applyWetness } from '../weather/wetness';
 import { GLSL_WIND, windUniforms } from './wind';
 
 const AREA = { cx: 0, cz: 2.5, half: 24 };
@@ -81,7 +82,8 @@ function grassMaterial(): THREE.MeshStandardMaterial {
     shader.fragmentShader = patch(shader.fragmentShader, '#include <color_fragment>', 'diffuseColor.rgb *= vGrass;', 'grass colour');
   };
   mat.customProgramCacheKey = () => 'grass';
-  return mat;
+  // wet grass is deeper in colour and catches the sky
+  return applyWetness(mat, { facing: false, darken: 0.88, deepen: 1.28, roughness: 0.34 });
 }
 
 /** The lawn: tens of thousands of instanced tufts, split into cells so off-screen grass is culled. */

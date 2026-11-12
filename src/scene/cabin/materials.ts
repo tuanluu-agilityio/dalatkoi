@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { interiorTexture } from '../../assets/procedural/cabinTextures';
 import { getPBR } from '../../assets/textureManager';
+import { applyWetness, applyWindowRain, type WetOptions } from '../weather/wetness';
 
 /** Geometry in the cabin is authored with UVs in "texture tiles", so maps use repeat 1. */
 let cached: Record<string, THREE.Material> | undefined;
@@ -26,7 +27,7 @@ function createCabinMaterials(anisotropy: number): Record<string, THREE.Material
     });
 
   const interior = interiorTexture();
-  return {
+  const materials: Record<string, THREE.Material> = {
     siding: wood('#e2c2a0'),
     trim: wood('#7a5238'),
     dark: wood('#4a3324', 0.9),
@@ -69,4 +70,20 @@ function createCabinMaterials(anisotropy: number): Record<string, THREE.Material
     lamp: new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 1.9, 0.85), vertexColors: true, toneMapped: false }),
     fabric: new THREE.MeshStandardMaterial({ color: '#8f9a78', roughness: 1, vertexColors: true }),
   };
+  // rain: timber and stone darken and take a sheen; glass collects drops; lamps are left alone
+  for (const [name, opts] of Object.entries(WET)) applyWetness(materials[name], opts);
+  applyWindowRain(materials.glass);
+  return materials;
 }
+
+const WET: Record<string, WetOptions> = {
+  siding: { darken: 0.78, roughness: 0.34 },
+  trim: { darken: 0.74, roughness: 0.3 },
+  dark: { darken: 0.74, roughness: 0.3 },
+  furniture: { darken: 0.68, roughness: 0.2 },
+  deck: { darken: 0.66, roughness: 0.18 },
+  stone: { darken: 0.62, roughness: 0.22 },
+  terracotta: { darken: 0.7, roughness: 0.3 },
+  fabric: { darken: 0.7, deepen: 1.2, roughness: 0.8 },
+  metal: { darken: 0.9, deepen: 1.0, roughness: 0.3 },
+};

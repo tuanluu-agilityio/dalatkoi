@@ -317,6 +317,67 @@ kbd {
   background: var(--mist);
 }
 
+/* weather: a small switch in the top right corner, with the rain's intensity under it */
+.weather {
+  position: absolute;
+  top: calc(var(--edge) + env(safe-area-inset-top));
+  right: calc(var(--edge) + env(safe-area-inset-right));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.45rem;
+  pointer-events: none;
+}
+
+.segmented {
+  display: flex;
+  padding: 0.25rem;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  pointer-events: auto;
+}
+
+.segmented button {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.2rem;
+  padding: 0 0.85rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mist-dim);
+  transition: color 0.3s ease, background 0.3s ease;
+}
+
+.segmented button:hover {
+  color: var(--mist);
+}
+
+.segmented button[aria-pressed='true'] {
+  color: var(--ink);
+  background: var(--mist);
+}
+
+.segmented.fine-grain {
+  animation: rise 0.35s ease both;
+}
+
+.segmented.fine-grain button {
+  min-height: 1.9rem;
+  padding: 0 0.7rem;
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
+}
+
+.hud[data-idle='true'] .weather .segmented {
+  pointer-events: none;
+}
+
 .tools {
   position: absolute;
   right: calc(var(--edge) + env(safe-area-inset-right));
@@ -405,6 +466,15 @@ kbd {
 
 .row-toggle[aria-pressed='true'] {
   color: var(--mist);
+}
+
+.panel h3 {
+  margin: 0.9rem 0 0;
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--mist-dim);
 }
 
 .slider {
@@ -605,7 +675,7 @@ kbd {
 
 .perf {
   position: absolute;
-  top: calc(var(--edge) + env(safe-area-inset-top));
+  top: calc(var(--edge) + 6.2rem + env(safe-area-inset-top));
   right: calc(var(--edge) + env(safe-area-inset-right));
   padding: 0.35rem 0.7rem;
   border-radius: 8px;
@@ -661,6 +731,23 @@ kbd {
 
   .tools {
     flex-direction: column;
+  }
+
+  /* under the camera modes, centred; out of the way while a panel is open there */
+  .weather {
+    top: calc(var(--edge) + 3.35rem + env(safe-area-inset-top));
+    left: 0;
+    right: 0;
+    align-items: center;
+  }
+
+  .weather[data-panel='true'] {
+    display: none;
+  }
+
+  .segmented button {
+    min-height: 2.1rem;
+    padding: 0 0.75rem;
   }
 
   .panel {

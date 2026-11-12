@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { GLSL_NOISE } from '../shaders/noise';
+import { GLSL_RAIN_RINGS } from '../weather/wetness';
 
 export const MAX_RIPPLES = 8;
 
 /**
  * Pond surface. A fresnel blend between a planar reflection of the real scene
  * and a depth-tinted, see-through body, with wind ripples, expanding ring
- * ripples from fish, and sun glint.
+ * ripples from fish, sun glint, and, when it rains, a field of raindrop rings.
  */
 export const WaterShader = {
   name: 'PondWater',
@@ -29,6 +30,9 @@ export const WaterShader = {
     uRipples: { value: Array.from({ length: MAX_RIPPLES }, () => new THREE.Vector4(0, 0, -100, 0)) },
     uFogColor: { value: new THREE.Color() },
     uFogDensity: { value: 0 },
+    /** Weather, copied in each frame (the Reflector clones these uniforms). */
+    uRain: { value: 0 },
+    uRainLevel: { value: 0 },
   },
   vertexShader: /* glsl */ `
     uniform mat4 textureMatrix;
@@ -44,12 +48,13 @@ export const WaterShader = {
     uniform sampler2D tDiffuse;
     uniform sampler2D uDepthMap;
     uniform vec4 uDepthRect;
-    uniform float uTime, uGust, uUseReflection, uFogDensity;
+    uniform float uTime, uGust, uUseReflection, uFogDensity, uRain, uRainLevel;
     uniform vec3 uSun, uSunColor, uShallow, uDeep, uSkyZenith, uSkyHorizon, uFogColor;
     uniform vec4 uRipples[${MAX_RIPPLES}];
     varying vec4 vReflUv;
     varying vec3 vWorld;
     ${GLSL_NOISE}
+    ${GLSL_RAIN_RINGS}
 
     vec2 slope(vec2 p) {
       const float e = 0.07;
@@ -67,7 +72,7 @@ export const WaterShader = {
       vec2 n = slope(p * 0.9 + vec2(t * 0.09, t * 0.05)) * 0.05;
       n += slope(p * 2.7 + vec2(-t * 0.16, t * 0.12)) * 0.035;
       n += slope(p * 7.1 + vec2(t * 0.25, -t * 0.21)) * 0.016;
-      n *= chop;
+      n *= chop * (1.0 + 0.7 * uRain);
 
       // ring ripples from fish and the spout
       for (int i = 0; i < ${MAX_RIPPLES}; i++) {
@@ -83,6 +88,16 @@ export const WaterShader = {
         n += (d / dist) * sin((dist - radius) * 30.0) * band * fade * fade * r.w * 0.2;
       }
 
+      // rain: rings of three sizes landing at their own pace, and a fine pitting between them
+      if (uRain > 0.0) {
+        float density = uRain * mix(0.32, 1.0, uRainLevel);
+        vec2 rings = rainRings(p * 2.6, t * 1.5, density);
+        rings += rainRings(p * 4.3 + 13.7, t * 1.9, density) * 0.7;
+        rings += rainRings(vec2(p.x * 0.8 - p.y * 0.6, p.x * 0.6 + p.y * 0.8) * 1.5 + 5.1, t * 1.1, density * 0.8) * 1.3;
+        n += rings * 0.085 * mix(0.75, 1.0, uRainLevel);
+        n += slope(p * 15.0 + vec2(t * 0.9, -t * 0.7)) * 0.012 * uRain * uRainLevel;
+      }
+
       vec3 N = normalize(vec3(-n.x, 1.0, -n.y));
       vec3 V = normalize(cameraPosition - vWorld);
       float ndv = max(dot(N, V), 0.0);
@@ -96,6 +111,7 @@ export const WaterShader = {
       } else {
         vec3 R = reflect(-V, N);
         vec3 sky = mix(uSkyHorizon, uSkyZenith, smoothstep(0.0, 0.8, R.y));
+        sky = mix(sky, uFogColor * mix(1.0, 0.55, smoothstep(0.0, 0.8, R.y)), uRain);
         refl = mix(vec3(0.07, 0.11, 0.06), sky, smoothstep(0.12, 0.42, R.y + fbm(R.xz * 6.0) * 0.1));
       }
 
@@ -108,7 +124,7 @@ export const WaterShader = {
       // sun glint
       vec3 H = normalize(V + uSun);
       float ndh = max(dot(N, H), 0.0);
-      vec3 glint = uSunColor * (pow(ndh, 900.0) * 9.0 + pow(ndh, 90.0) * 0.22);
+      vec3 glint = uSunColor * (pow(ndh, 900.0) * 9.0 + pow(ndh, 90.0) * 0.22) * (1.0 - 0.94 * uRain);
 
       vec3 col = mix(body, refl, fresnel) + glint;
       float alpha = mix(bodyAlpha, 1.0, fresnel) + dot(glint, vec3(0.33));

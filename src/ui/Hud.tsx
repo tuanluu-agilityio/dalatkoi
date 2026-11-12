@@ -4,8 +4,9 @@ import { QUALITY, type QualityLevel } from '../config/quality';
 import { events } from '../state/events';
 import { runtime } from '../state/runtime';
 import { useStore, type CameraMode, type VolumeBus } from '../state/store';
+import { RAIN_INTENSITIES, type RainIntensity, type WeatherMode } from '../weather/weather';
 import { POIS } from '../world/pois';
-import { CloseIcon, FullscreenIcon, HelpIcon, OrbitIcon, QualityIcon, SoundIcon, TourIcon, WalkIcon } from './icons';
+import { BoltIcon, CloseIcon, FullscreenIcon, HelpIcon, OrbitIcon, QualityIcon, RainIcon, SoundIcon, SunIcon, TourIcon, WalkIcon } from './icons';
 
 type Panel = 'sound' | 'quality' | 'help' | null;
 
@@ -15,11 +16,19 @@ const MODES: { id: CameraMode; label: string; key: string; icon: React.ReactNode
   { id: 'orbit', label: 'Orbit', key: '3', icon: <OrbitIcon /> },
 ];
 
+const WEATHERS: { id: WeatherMode; label: string; icon: React.ReactNode }[] = [
+  { id: 'morning', label: 'Morning', icon: <SunIcon /> },
+  { id: 'rain', label: 'Rain', icon: <RainIcon /> },
+];
+
+const INTENSITY_LABEL: Record<RainIntensity, string> = { drizzle: 'Drizzle', moderate: 'Moderate', heavy: 'Heavy' };
+
 const BUSES: { id: VolumeBus; label: string }[] = [
   { id: 'master', label: 'Overall' },
   { id: 'ambient', label: 'Wind & water' },
   { id: 'environment', label: 'Birds, chimes, koi' },
   { id: 'footsteps', label: 'Footsteps' },
+  { id: 'rain', label: 'Rain' },
 ];
 
 const IDLE_AFTER = 4000;
@@ -53,6 +62,10 @@ export function Hud() {
   const noteOpen = useStore((s) => s.noteOpen);
   const locked = useStore((s) => s.pointerLocked);
   const isTouch = useStore((s) => s.isTouch);
+  const weather = useStore((s) => s.weather);
+  const rainIntensity = useStore((s) => s.rainIntensity);
+  const thunder = useStore((s) => s.thunder);
+  const lightning = useStore((s) => s.lightning);
 
   const [panel, setPanel] = useState<Panel>(null);
   const [idle, setIdle] = useState(false);
@@ -108,6 +121,9 @@ export function Hud() {
           break;
         case 'KeyM':
           s.toggleMuted();
+          break;
+        case 'KeyR':
+          s.toggleWeather();
           break;
         case 'KeyF':
           toggleFullscreen();
@@ -189,6 +205,26 @@ export function Hud() {
         ))}
       </nav>
 
+      <div className="weather chrome" data-panel={panel !== null}>
+        <nav className="segmented" aria-label="Weather">
+          {WEATHERS.map((w) => (
+            <button key={w.id} aria-pressed={weather === w.id} title={`${w.label} (R)`} onClick={() => useStore.getState().setWeather(w.id)}>
+              {w.icon}
+              <span>{w.label}</span>
+            </button>
+          ))}
+        </nav>
+        {weather === 'rain' && (
+          <nav className="segmented fine-grain" aria-label="Rain intensity">
+            {RAIN_INTENSITIES.map((level) => (
+              <button key={level} aria-pressed={rainIntensity === level} onClick={() => useStore.getState().setRainIntensity(level)}>
+                {INTENSITY_LABEL[level]}
+              </button>
+            ))}
+          </nav>
+        )}
+      </div>
+
       <div className="tools chrome">
         <button className="tool" aria-label={muted ? 'Sound is off: open sound settings' : 'Sound settings'} aria-expanded={panel === 'sound'} onClick={() => open('sound')}>
           <SoundIcon on={!muted} />
@@ -232,6 +268,16 @@ export function Hud() {
               />
             </label>
           ))}
+          <h3>Storm</h3>
+          <button className="row-toggle" aria-pressed={thunder} onClick={() => useStore.getState().setThunder(!thunder)}>
+            <SoundIcon on={thunder} />
+            <span>{thunder ? 'Thunder is on' : 'Thunder is off'}</span>
+          </button>
+          <button className="row-toggle" aria-pressed={lightning} onClick={() => useStore.getState().setLightning(!lightning)}>
+            <BoltIcon />
+            <span>{lightning ? 'Lightning flashes are on' : 'Lightning flashes are off'}</span>
+          </button>
+          <p className="fine">Thunder and lightning only come with the rain, now and then.</p>
         </section>
       )}
 
@@ -276,6 +322,8 @@ export function Hud() {
               <dd>Read about the place you are standing</dd>
               <dt>Pinch (Orbit)</dt>
               <dd>Move closer or further</dd>
+              <dt>Morning · Rain</dt>
+              <dd>Change the weather; choose how hard it rains</dd>
             </dl>
           ) : (
             <dl className="keys">
@@ -289,6 +337,8 @@ export function Hud() {
               <dd>Read the note where you stand</dd>
               <dt>1 · 2 · 3</dt>
               <dd>Walk · Tour · Orbit</dd>
+              <dt>R</dt>
+              <dd>Morning · Rain</dd>
               <dt>M · F · H · P</dt>
               <dd>Mute · Full screen · This help · Frame rate</dd>
             </dl>

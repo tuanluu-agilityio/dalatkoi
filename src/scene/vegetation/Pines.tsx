@@ -8,6 +8,7 @@ import { createRng } from '../../world/rng';
 import { SCATTER } from '../../world/scatter';
 import { foliageMaterial, sphereNormals } from '../shared/cards';
 import { Instances, trs, type InstanceSpec } from '../shared/Instances';
+import { applyWetness } from '../weather/wetness';
 import { applyWind, windDepthMaterial, type WindOptions } from './wind';
 
 /** Whole-tree sway: nothing at the base, most at the crown. Shared by bark and needles so they stay attached. */
@@ -132,9 +133,12 @@ function buildPine(seed: number, detail: 'near' | 'far'): PineGeometry {
 export function Pines({ profile }: { profile: QualityProfile }) {
   const assets = useMemo(() => {
     const bark = getPBR('bark', 1, 1, profile.anisotropy);
-    const barkMat = applyWind(
-      new THREE.MeshStandardMaterial({ map: bark.map, normalMap: bark.normalMap, roughnessMap: bark.roughnessMap, color: '#b9a391', roughness: 1 }),
-      SWAY,
+    const barkMat = applyWetness(
+      applyWind(
+        new THREE.MeshStandardMaterial({ map: bark.map, normalMap: bark.normalMap, roughnessMap: bark.roughnessMap, color: '#b9a391', roughness: 1 }),
+        SWAY,
+      ),
+      { darken: 0.66, roughness: 0.45, facing: false },
     );
     const barkDepth = windDepthMaterial(SWAY);
     const { material: needleMat, depth: needleDepth } = foliageMaterial({

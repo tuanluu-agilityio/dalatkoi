@@ -17,7 +17,9 @@ export function WindClock(): null {
     const t = (windUniforms.uTime.value += dt);
     runtime.time = t;
     const gust = 0.42 + 0.3 * Math.sin(t * 0.13) * Math.sin(t * 0.071 + 1.3) + 0.2 * Math.sin(t * 0.31 + 0.6);
-    runtime.gust = THREE.MathUtils.clamp(gust, 0.05, 1);
+    // rain comes with wind: the same gusts, lifted, and more so the harder it rains
+    const storm = runtime.rain * (0.08 + 0.3 * runtime.rainLevel);
+    runtime.gust = THREE.MathUtils.clamp(gust + storm, 0.05, 1);
     windUniforms.uGust.value = runtime.gust;
   });
   return null;

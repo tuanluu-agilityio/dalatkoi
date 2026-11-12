@@ -7,8 +7,10 @@ import { MASK, forestWeight, pathWeight } from '../../world/groundCover';
 import { CLEARING, WATER_LEVEL } from '../../world/layout';
 import { fbm2 } from '../../world/noise';
 import { groundHeight } from '../../world/terrain';
-import { patch } from '../shaders/noise';
+import { GLSL_NOISE, patch } from '../shaders/noise';
 import { windUniforms } from '../vegetation/wind';
+import { weatherUniforms } from '../weather/uniforms';
+import { GLSL_RAIN_RINGS } from '../weather/wetness';
 
 /** Grid spacing is ~0.23 m in the clearing and grows toward the horizon. */
 const warp = (t: number) => Math.sign(t) * (34 * Math.abs(t) + 104 * Math.abs(t) ** 3);
@@ -94,6 +96,9 @@ export function Terrain({ profile }: { profile: QualityProfile }) {
         uPebblesN: { value: pebbles.normalMap },
         uWater: { value: WATER_LEVEL },
         uTime: windUniforms.uTime,
+        uWet: weatherUniforms.uWet,
+        uRain: weatherUniforms.uRain,
+        uRainLevel: weatherUniforms.uRainLevel,
       });
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vTerrainPos;')
@@ -103,8 +108,10 @@ export function Terrain({ profile }: { profile: QualityProfile }) {
         varying vec3 vTerrainPos;
         uniform sampler2D uMask, uForest, uForestN, uGravel, uGravelN, uPebbles, uPebblesN;
         uniform vec3 uMaskRect;
-        uniform float uWater, uTime;
-        float twForest, twPath, twUnder;
+        uniform float uWater, uTime, uWet, uRain, uRainLevel;
+        float twForest, twPath, twUnder, twPuddle;
+        ${GLSL_NOISE}
+        ${GLSL_RAIN_RINGS}
         float caustics(vec2 p, float t) {
           vec2 q = p + 0.35 * vec2(sin(p.y * 1.7 + t * 0.9), cos(p.x * 1.9 - t * 0.8));
           float a = sin(q.x * 3.1 + t) + sin(q.y * 2.7 - t * 1.1) + sin((q.x + q.y) * 2.2 + t * 0.7);
@@ -116,6 +123,9 @@ export function Terrain({ profile }: { profile: QualityProfile }) {
           n = mix(n, texture2D(uForestN, wp * 0.21), twForest);
           n = mix(n, texture2D(uGravelN, wp * 0.47), twPath);
           n = mix(n, texture2D(uPebblesN, wp * 0.55), twUnder);
+          // standing water lies flat, and the rain rings it
+          n = mix(n, vec4(0.5, 0.5, 1.0, 1.0), twPuddle);
+          if (twPuddle > 0.01) n.xy += rainRings(wp * 3.1, uTime * 1.4, uRain * mix(0.4, 1.0, uRainLevel)) * 0.1 * twPuddle;
           return n;
         }`;
       let fs = shader.fragmentShader.replace('#include <normalmap_pars_fragment>', `#include <normalmap_pars_fragment>\n${header}`);
@@ -148,6 +158,12 @@ export function Terrain({ profile }: { profile: QualityProfile }) {
           // damp, darker soil right at the waterline
           col *= mix(1.0, 0.62, smoothstep(uWater + 0.16, uWater + 0.02, vTerrainPos.y));
           col = mix(col, bed, twUnder);
+          // rain: soaked ground deepens in colour, and puddles spread from the low spots of the paths
+          float land = 1.0 - twUnder;
+          col = mix(col, pow(col, vec3(1.3)) * 0.82, uWet * land);
+          float grow = mix(0.82, 0.55, uWet);
+          twPuddle = smoothstep(grow, grow + 0.1, fbm(wp * 0.6 + 7.3)) * mix(0.1, 1.0, twPath) * (1.0 - twForest) * land * smoothstep(0.0, 0.5, uWet);
+          col = mix(col, col * 0.38, twPuddle);
           diffuseColor.rgb *= col;
         }`,
         'terrain map_fragment',
@@ -157,7 +173,9 @@ export function Terrain({ profile }: { profile: QualityProfile }) {
         '#include <roughnessmap_fragment>',
         /* glsl */ `#include <roughnessmap_fragment>
         roughnessFactor = mix(mix(0.9, 0.97, twForest), 0.86, twPath);
-        roughnessFactor = mix(roughnessFactor, 0.5, twUnder);`,
+        roughnessFactor = mix(roughnessFactor, 0.5, twUnder);
+        roughnessFactor = mix(roughnessFactor, roughnessFactor * 0.6, uWet * (1.0 - twUnder));
+        roughnessFactor = mix(roughnessFactor, 0.05, twPuddle);`,
         'terrain roughness',
       );
       fs = patch(

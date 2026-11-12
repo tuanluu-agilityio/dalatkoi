@@ -22,6 +22,10 @@ export interface QualityProfile {
   shafts: number;
   terrainSegments: number;
   anisotropy: number;
+  /** Rain streaks drawn at full intensity (one instanced draw call). */
+  rainDrops: number;
+  /** Pool of ground and water splashes. */
+  rainSplashes: number;
 }
 
 export const QUALITY: Record<QualityLevel, QualityProfile> = {
@@ -44,6 +48,8 @@ export const QUALITY: Record<QualityLevel, QualityProfile> = {
     shafts: 14,
     terrainSegments: 300,
     anisotropy: 8,
+    rainDrops: 14000,
+    rainSplashes: 240,
   },
   medium: {
     label: 'Medium',
@@ -64,6 +70,8 @@ export const QUALITY: Record<QualityLevel, QualityProfile> = {
     shafts: 9,
     terrainSegments: 220,
     anisotropy: 4,
+    rainDrops: 8000,
+    rainSplashes: 150,
   },
   low: {
     label: 'Low',
@@ -84,6 +92,8 @@ export const QUALITY: Record<QualityLevel, QualityProfile> = {
     shafts: 5,
     terrainSegments: 150,
     anisotropy: 2,
+    rainDrops: 3600,
+    rainSplashes: 80,
   },
 };
 

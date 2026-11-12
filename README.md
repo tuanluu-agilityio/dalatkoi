@@ -40,6 +40,7 @@ host.
 | Zoom lens / orbit distance | Scroll | Pinch (Orbit) |
 | Read the note where you stand | `E` | Tap the note |
 | Camera mode | `1` Walk · `2` Tour · `3` Orbit, or the switcher | The switcher |
+| Weather | `R` switches Morning / Rain; the switch (top right) also sets Drizzle, Moderate or Heavy | The switch under the camera modes |
 | Sound | `M` mutes; the speaker button opens the mixer | Speaker button |
 | Other | `F` full screen · `H` help · `P` frame-rate readout | Buttons |
 
@@ -65,6 +66,13 @@ The interface fades out after four seconds without input and returns on any mous
   in the trees around you, footsteps that change on grass, gravel, stone, bridge and veranda, koi
   surfacing, a wind chime, creaking timber. Four volume sliders and mute. Sound starts only after
   you press **Enter experience**.
+- **Rain mode:** switch between the morning and a rainy day at any time; the change takes about
+  five seconds and leaves the camera where it is. Overcast light and thicker mist, wind-slanted
+  rain in three intensities, wet timber, tiles, stone and leaves, puddles on the paths, drops on
+  the window glass, runoff from the eaves and the trees, raindrop rings and splashes on the pond,
+  occasional distant lightning with delayed thunder. Rain sound is layered and positional (open
+  garden, pond, bridge, cabin roof, under the veranda) with its own volume slider; thunder and
+  lightning can each be switched off. Lightning starts off when the system asks for reduced motion.
 - **Six points of interest** with a short note each: pond, bridge, veranda, spout, hydrangeas, pines.
 
 ## Stack

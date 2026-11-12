@@ -17,6 +17,17 @@ export const runtime = {
   focus: 12,
   /** Slow gust signal 0..1 shared by wind visuals and wind audio. */
   gust: 0.4,
+  /** Weather, written by the weather controller: 0..1 presence of the rain (eased through transitions). */
+  rain: 0,
+  /** 0..1 smoothed rain intensity (drizzle … heavy). */
+  rainLevel: 0.62,
+  /** 0..1 wetness of surfaces; lags the rain. */
+  wet: 0,
+  /** 0..1 brightness of the current lightning flash. */
+  flash: 0,
+  /** 0..1 how much roof is over the camera, and 1 when it is inside the cabin walls. */
+  shelter: 0,
+  indoors: 0,
   fps: 60,
   /** Draw statistics of the last main render pass, for the performance readout. */
   drawCalls: 0,

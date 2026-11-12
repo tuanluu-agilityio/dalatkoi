@@ -66,3 +66,23 @@ export const CloseIcon = () => (
     <path d="M6 6l12 12M18 6L6 18" />
   </Svg>
 );
+
+export const SunIcon = () => (
+  <Svg>
+    <circle cx="12" cy="12" r="3.6" />
+    <path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M6 6l1.4 1.4M16.6 16.6L18 18M6 18l1.4-1.4M16.6 7.4L18 6" />
+  </Svg>
+);
+
+export const RainIcon = () => (
+  <Svg>
+    <path d="M7.5 15.5a4 4 0 0 1-.6-7.95 5.2 5.2 0 0 1 10.1 1.1A3.5 3.5 0 0 1 16.5 15.5z" />
+    <path d="M9 18l-.8 2.2M12.4 18l-.8 2.2M15.8 18l-.8 2.2" />
+  </Svg>
+);
+
+export const BoltIcon = () => (
+  <Svg>
+    <path d="M13 3.5L6.5 13.5h5l-1 7 6.5-10h-5z" />
+  </Svg>
+);

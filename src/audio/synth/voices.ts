@@ -251,3 +251,67 @@ export function creak(ctx: AudioContext, out: AudioNode, level: number): number 
   g.connect(out);
   return length + 0.1;
 }
+
+export type Raindrop = 'leaf' | 'wood' | 'water' | 'eave';
+
+/** One heavy drop landing on something nearby. */
+export function raindrop(ctx: AudioContext, out: AudioNode, b: Buffers, kind: Raindrop): number {
+  const t = ctx.currentTime + 0.005;
+  switch (kind) {
+    case 'leaf':
+      burst(ctx, out, b.white, t, { type: 'bandpass', freq: rand(3400, 7200), q: 2, attack: 0.001, decay: rand(0.02, 0.04), gain: rand(0.07, 0.14) });
+      return 0.08;
+    case 'wood':
+      burst(ctx, out, b.brown, t, { type: 'bandpass', freq: rand(340, 620), q: 5, attack: 0.002, decay: rand(0.04, 0.07), gain: rand(0.4, 0.7) });
+      burst(ctx, out, b.white, t, { type: 'bandpass', freq: 2300, q: 1.5, attack: 0.001, decay: 0.012, gain: 0.05 });
+      return 0.12;
+    case 'water':
+      return drip(ctx, out);
+    case 'eave':
+      // a bead off the roof edge into the wet below: the drop, then the small slap of it landing
+      drip(ctx, out);
+      burst(ctx, out, b.pink, t + 0.01, { type: 'lowpass', freq: rand(700, 1100), q: 0.6, attack: 0.002, decay: 0.045, gain: rand(0.08, 0.16) });
+      return 0.14;
+  }
+}
+
+/**
+ * Distant thunder, starting `delay` seconds from now: brown noise through a
+ * low-pass that closes as the sound rolls away, with a few swells of
+ * decreasing size. Nearer strikes open with a short, soft crack.
+ */
+export function thunder(ctx: AudioContext, out: AudioNode, b: Buffers, strength: number, delay: number): number {
+  const s = Math.min(1, Math.max(0.1, strength));
+  const t0 = ctx.currentTime + Math.max(0, delay);
+  const length = rand(4.5, 7.5);
+
+  const src = ctx.createBufferSource();
+  src.buffer = b.brown;
+  src.loop = true;
+  const low = ctx.createBiquadFilter();
+  low.type = 'lowpass';
+  low.Q.value = 0.5;
+  low.frequency.setValueAtTime(500 + 1100 * s, t0);
+  low.frequency.exponentialRampToValueAtTime(90, t0 + length);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  const swells = 3 + Math.floor(Math.random() * 3);
+  let t = t0;
+  for (let i = 0; i < swells; i++) {
+    const peak = s * 1.1 * (1 - (i / swells) * 0.65) * rand(0.7, 1);
+    t += i === 0 ? rand(0.08, 0.25) : rand(0.25, 0.5);
+    g.gain.linearRampToValueAtTime(peak, t);
+    t += rand(0.3, 0.7);
+    g.gain.linearRampToValueAtTime(peak * rand(0.3, 0.5), t);
+  }
+  g.gain.exponentialRampToValueAtTime(0.0001, Math.max(t + 0.5, t0 + length));
+  src.connect(low);
+  low.connect(g);
+  g.connect(out);
+  src.start(t0, Math.random() * 2);
+  src.stop(Math.max(t + 0.5, t0 + length) + 0.1);
+
+  thump(ctx, out, t0 + 0.04, 62, 30, 1.3, 0.45 * s);
+  if (s > 0.6) burst(ctx, out, b.white, t0, { type: 'bandpass', freq: 1700, q: 0.6, attack: 0.006, decay: 0.24, gain: 0.2 * s });
+  return delay + length + 0.7;
+}

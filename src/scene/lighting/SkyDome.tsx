@@ -3,9 +3,13 @@ import * as THREE from 'three';
 import { SUN_DIR } from '../../world/layout';
 import { GLSL_NOISE } from '../shaders/noise';
 import { windUniforms } from '../vegetation/wind';
+import { weatherUniforms } from '../weather/uniforms';
 
-/** Colour the fog and the far mountains fade into. */
-export const HAZE_COLOR = new THREE.Color('#cfd9d6');
+/** Haze of a clear morning, and of a rainy one. */
+export const HAZE_MORNING = new THREE.Color('#cfd9d6');
+export const HAZE_RAIN = new THREE.Color('#8e999d');
+/** Colour the fog and the far mountains fade into right now. The weather controller moves it between the two. */
+export const HAZE_COLOR = HAZE_MORNING.clone();
 
 const vertex = /* glsl */ `
 varying vec3 vDir;
@@ -20,6 +24,9 @@ const fragment = /* glsl */ `
 uniform vec3 uSun;
 uniform float uTime;
 uniform float uClouds;
+uniform float uRain, uFlash;
+uniform vec2 uFlashDir;
+uniform vec3 uHaze;
 varying vec3 vDir;
 ${GLSL_NOISE}
 void main() {
@@ -44,8 +51,20 @@ void main() {
     col = mix(col, cloud, cover * 0.55);
   }
 
+  if (uRain > 0.0) {
+    // overcast: a low grey deck, lighter toward the horizon where it meets the haze
+    vec2 p = d.xz / (max(h, 0.0) + 0.3);
+    float c = fbm(p * 1.1 + vec2(uTime * 0.011, uTime * 0.004)) * 0.6 + fbm(p * 2.7 - vec2(uTime * 0.016, 0.0)) * 0.4;
+    vec3 deck = mix(uHaze, vec3(0.2, 0.225, 0.26), smoothstep(0.0, 0.75, h));
+    deck *= 0.86 + 0.3 * c;
+    // a flash lights the cloud from inside, brightest toward the strike
+    float toward = pow(max(dot(normalize(d.xz + 1e-4), uFlashDir), 0.0), 3.0);
+    deck += vec3(0.62, 0.68, 0.82) * uFlash * (0.22 + 0.85 * toward * smoothstep(0.75, 0.05, h)) * (0.6 + 0.8 * c);
+    col = mix(col, deck, uRain);
+  }
+
   // below the horizon: hazy ground bounce, used mostly by the environment map
-  vec3 ground = mix(horizon * 0.82, vec3(0.13, 0.17, 0.09), smoothstep(0.0, -0.3, h));
+  vec3 ground = mix(mix(horizon, uHaze, uRain) * 0.82, vec3(0.13, 0.17, 0.09), smoothstep(0.0, -0.3, h));
   col = mix(col, ground, step(h, 0.0));
 
   gl_FragColor = vec4(col, 1.0);
@@ -54,7 +73,7 @@ void main() {
 }`;
 
 /** Gradient morning sky with sun glow and thin drifting cloud. */
-export function SkyDome({ radius = 900, clouds = true }: { radius?: number; clouds?: boolean }) {
+export function SkyDome({ radius = 900, clouds = true, weather = true }: { radius?: number; clouds?: boolean; weather?: boolean }) {
   const material = useMemo(
     () =>
       new THREE.ShaderMaterial({
@@ -64,12 +83,17 @@ export function SkyDome({ radius = 900, clouds = true }: { radius?: number; clou
           uSun: { value: new THREE.Vector3(...SUN_DIR) },
           uTime: windUniforms.uTime,
           uClouds: { value: clouds ? 1 : 0 },
+          // the copy that lights the scene stays a clear morning: it is captured once
+          uRain: weather ? weatherUniforms.uRain : { value: 0 },
+          uFlash: weather ? weatherUniforms.uFlash : { value: 0 },
+          uFlashDir: weatherUniforms.uFlashDir,
+          uHaze: { value: HAZE_COLOR },
         },
         side: THREE.BackSide,
         depthWrite: false,
         fog: false,
       }),
-    [clouds],
+    [clouds, weather],
   );
   return (
     <mesh material={material} frustumCulled={false} renderOrder={-10}>

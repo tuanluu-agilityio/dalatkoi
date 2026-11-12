@@ -5,6 +5,8 @@ export interface EventMap {
   footstep: { surface: Surface; speed: number; x: number; z: number };
   fishSurface: { x: number; z: number; strength: number };
   ripple: { x: number; z: number; strength: number };
+  /** A lightning strike: thunder follows after `delay` seconds at 0..1 `strength`. */
+  thunder: { delay: number; strength: number };
   skipIntro: undefined;
   interact: undefined;
 }

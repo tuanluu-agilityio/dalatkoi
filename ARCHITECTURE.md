@@ -100,10 +100,33 @@ Canvas) passes the camera pose and gust strength each frame, forwards footstep a
 applies volume and mute from the store, and suspends the context while the tab is hidden.
 One-shot voices are capped (18) and footsteps are rate-limited.
 
+## Weather
+`weather/weather.ts` (pure) eases a small state toward the mode and intensity held in the store.
+`scene/weather/WeatherController` steps it once per frame and publishes the result twice: to
+`runtime` (`rain`, `rainLevel`, `wet`, `flash`, `shelter`, `indoors`) for audio and CPU systems, and
+to `weatherUniforms` (`uRain`, `uRainLevel`, `uWet`, `uFlash`) for shaders. Every effect is a blend
+that is the identity at 0, so the morning is unchanged, and nothing is rebuilt when the weather
+changes. The controller also owns the fog, the live `HAZE_COLOR`, and the lightning schedule
+(it emits a `thunder` event with the delay).
+
+- **Rain** (`Rain.tsx`): one instanced draw call of streaks in a box that wraps around the camera;
+  motion, wind slant and the cut-out under the cabin roofs are all in the vertex shader. Intensity
+  sets the instance count. **Splashes** are a ring-buffer pool placed on the CPU with the world
+  model; **Drips** (eaves, tree crowns) are static instances animated in the shader.
+- **Wet surfaces** (`wetness.ts`): `applyWetness(material)` chains onto `onBeforeCompile`, like
+  `applyWind`. The terrain and the pond add their own terms (puddles; raindrop rings via
+  `GLSL_RAIN_RINGS`) inside their existing shaders.
+- **Light**: `Lighting` blends the sun, hemisphere and environment intensity; `SkyDome` blends to
+  an overcast deck. The environment map is captured once from a clear sky and only dimmed.
+- **Audio**: a `rain` bus with a shelter low-pass; beds in `synth/beds.ts` (`createRain`), drops and
+  thunder in `synth/voices.ts`. `world/shelter.ts` says how much roof is over the listener.
+- Budgets: `rainDrops` and `rainSplashes` in the quality profile, times 0.6 on touch devices. The
+  three rain meshes are not drawn at all on a dry morning.
+
 ## State
 Store: `phase` (`loading | ready | intro | explore`), `sceneReady`, `loadProgress`, `cameraMode`,
 `quality`, `autoQuality`, `dprScale`, `muted`, `volumes`, `hint`, `noteOpen`, `pointerLocked`,
-`isTouch`. Components subscribe with selectors; frame code reads `useStore.getState()`.
+`isTouch`, `weather`, `rainIntensity`, `thunder`, `lightning`. Components subscribe with selectors; frame code reads `useStore.getState()`.
 
 ## Assets
 - **Geometry:** all procedural, built once at mount, merged or instanced.

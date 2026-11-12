@@ -3,6 +3,7 @@ import { getPBR } from '../../assets/textureManager';
 import { WATER_LEVEL } from '../../world/layout';
 import { fbm2 } from '../../world/noise';
 import { patch } from '../shaders/noise';
+import { applyWetness } from '../weather/wetness';
 
 /** A lumpy, slightly flattened boulder of roughly unit radius. Each seed is a different stone. */
 export function rockGeometry(seed: number, detail = 3): THREE.BufferGeometry {
@@ -111,6 +112,7 @@ export function rockMaterial(anisotropy: number): THREE.MeshStandardMaterial {
       new THREE.MeshStandardMaterial({ map: pbr.map, normalMap: pbr.normalMap, roughnessMap: pbr.roughnessMap, color: '#c9c7bd', roughness: 1 }),
     );
     shared.normalScale.set(1.3, 1.3);
+    applyWetness(shared, { darken: 0.66, roughness: 0.22 });
   }
   return shared;
 }
@@ -119,7 +121,10 @@ export function rockMaterial(anisotropy: number): THREE.MeshStandardMaterial {
 export function pavingMaterial(anisotropy: number): THREE.MeshStandardMaterial {
   if (!paving) {
     const pbr = getPBR('rock', 1, 1, anisotropy);
-    paving = new THREE.MeshStandardMaterial({ normalMap: pbr.normalMap, roughnessMap: pbr.roughnessMap, color: '#8f897d', roughness: 1 });
+    paving = applyWetness(
+      new THREE.MeshStandardMaterial({ normalMap: pbr.normalMap, roughnessMap: pbr.roughnessMap, color: '#8f897d', roughness: 1 }),
+      { darken: 0.6, roughness: 0.14 },
+    );
   }
   return paving;
 }

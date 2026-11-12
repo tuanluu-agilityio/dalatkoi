@@ -5,6 +5,7 @@ import { Reflector } from 'three/examples/jsm/objects/Reflector.js';
 import { makeCanvas, pixelFill } from '../../assets/procedural/canvas';
 import type { QualityProfile } from '../../config/quality';
 import { events } from '../../state/events';
+import { runtime } from '../../state/runtime';
 import { POND, SUN_DIR, WATER_LEVEL } from '../../world/layout';
 import { pondDepth, pondOutline } from '../../world/pond';
 import { windUniforms } from '../vegetation/wind';
@@ -91,6 +92,8 @@ export function Water({ profile }: { profile: QualityProfile }) {
     const u = (mesh.material as THREE.ShaderMaterial).uniforms;
     u.uTime.value = windUniforms.uTime.value;
     u.uGust.value = windUniforms.uGust.value;
+    u.uRain.value = runtime.rain;
+    u.uRainLevel.value = runtime.rainLevel;
     const fog = scene.fog as THREE.FogExp2 | null;
     if (fog) {
       u.uFogColor.value.copy(fog.color);

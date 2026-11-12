@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AudioEngine, busGains } from './AudioEngine';
 import { createFakeContext } from './fakeContext';
 
-const volumes = { master: 0.8, ambient: 0.8, environment: 0.85, footsteps: 0.7 };
+const volumes = { master: 0.8, ambient: 0.8, environment: 0.85, footsteps: 0.7, rain: 0.85 };
 const listener = { x: 0, y: 1.65, z: 16, fx: 0, fy: 0, fz: -1 };
 const world = { gust: 0.5, walkSpeed: 0, embodied: true };
 
@@ -126,5 +126,78 @@ describe('AudioEngine', () => {
     engine.dispose();
     expect(fake.ctx.state).toBe('closed');
     expect(engine.started).toBe(false);
+  });
+  describe('rain', () => {
+    const rain = { rain: 1, level: 1, wet: 1, roof: 0, indoors: 0 };
+
+    it('accepts weather and thunder before it is started', () => {
+      const engine = new AudioEngine();
+      expect(() => {
+        engine.setWeather(rain);
+        engine.setThunderEnabled(false);
+        engine.thunder(2, 0.8);
+        engine.update(0.016, listener, world);
+      }).not.toThrow();
+    });
+
+    it('adds no one-shot voices on a dry morning', () => {
+      const dry = createFakeContext();
+      const wet = createFakeContext();
+      const a = new AudioEngine();
+      const b = new AudioEngine();
+      a.start(() => dry.ctx);
+      b.start(() => wet.ctx);
+      b.setWeather(rain);
+      const before = [dry.created.panner, wet.created.panner];
+      for (let i = 0; i < 100; i++) {
+        dry.advance(0.1);
+        wet.advance(0.1);
+        a.update(0.1, listener, world);
+        b.update(0.1, listener, world);
+      }
+      // ten seconds: the dry engine places a few birds at most; the wet one hears drops everywhere
+      expect(dry.created.panner - before[0]).toBeLessThan(12);
+      expect(wet.created.panner - before[1]).toBeGreaterThan(30);
+    });
+
+    it('runs a long downpour, under a roof and indoors, without errors', () => {
+      const fake = createFakeContext();
+      const engine = new AudioEngine();
+      engine.start(() => fake.ctx);
+      expect(() => {
+        for (let i = 0; i < 3000; i++) {
+          fake.advance(0.1);
+          engine.setWeather({ rain: 1, level: (i % 300) / 300, wet: 1, roof: i % 2, indoors: i % 3 === 0 ? 1 : 0 });
+          engine.update(0.1, listener, world);
+          if (i % 200 === 0) engine.thunder(3, 0.9);
+        }
+        engine.setWeather({ rain: 0, level: 0.5, wet: 0.6, roof: 0, indoors: 0 });
+        for (let i = 0; i < 100; i++) engine.update(0.1, listener, world);
+      }).not.toThrow();
+    });
+
+    it('caps the drops sounding at once', () => {
+      const fake = createFakeContext();
+      const engine = new AudioEngine();
+      engine.start(() => fake.ctx);
+      engine.setWeather(rain);
+      const before = fake.created.panner;
+      // time does not advance, so nothing ever finishes
+      for (let i = 0; i < 2000; i++) engine.update(0.1, listener, world);
+      expect(fake.created.panner - before).toBeLessThan(30);
+    });
+
+    it('makes no thunder while thunder is switched off', () => {
+      const fake = createFakeContext();
+      const engine = new AudioEngine();
+      engine.start(() => fake.ctx);
+      engine.setThunderEnabled(false);
+      const before = fake.created.bufferSource;
+      engine.thunder(2, 1);
+      expect(fake.created.bufferSource).toBe(before);
+      engine.setThunderEnabled(true);
+      engine.thunder(2, 1);
+      expect(fake.created.bufferSource).toBeGreaterThan(before);
+    });
   });
 });
