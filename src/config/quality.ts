@@ -35,9 +35,9 @@ export const QUALITY: Record<QualityLevel, QualityProfile> = {
     bloom: true,
     dof: true,
     smaa: true,
-    grassCount: 110000,
+    grassCount: 120000,
     vegetationDensity: 1,
-    pineCount: 170,
+    pineCount: 330,
     koiCount: 14,
     mistLayers: 26,
     motes: 700,
@@ -55,9 +55,9 @@ export const QUALITY: Record<QualityLevel, QualityProfile> = {
     bloom: true,
     dof: false,
     smaa: true,
-    grassCount: 55000,
+    grassCount: 52000,
     vegetationDensity: 0.6,
-    pineCount: 120,
+    pineCount: 220,
     koiCount: 11,
     mistLayers: 16,
     motes: 350,
@@ -77,7 +77,7 @@ export const QUALITY: Record<QualityLevel, QualityProfile> = {
     smaa: false,
     grassCount: 20000,
     vegetationDensity: 0.3,
-    pineCount: 75,
+    pineCount: 120,
     koiCount: 8,
     mistLayers: 9,
     motes: 120,
@@ -97,7 +97,7 @@ export interface DeviceSignals {
 }
 
 const SOFTWARE = /swiftshader|llvmpipe|software|basic render/i;
-const DISCRETE = /nvidia|geforce|rtx|gtx|quadro|radeon rx|radeon pro|apple m\d|\barc\b/i;
+const DISCRETE = /nvidia|geforce|rtx|gtx|quadro|radeon rx|radeon pro|apple m\d|arc\(tm\) [ab]\d{3}/i;
 const INTEGRATED = /intel|uhd|iris|hd graphics|radeon\(tm\) graphics|vega|mali|adreno|powervr/i;
 
 export function detectQuality(s: DeviceSignals): QualityLevel {

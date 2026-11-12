@@ -136,6 +136,7 @@ export function Terrain({ profile }: { profile: QualityProfile }) {
           vec3 gB = texture2D(map, wp * 0.067 + 3.7).rgb;
           vec3 grassCol = mix(gA, gB, 0.45) * mix(vec3(0.5, 0.86, 0.36), vec3(0.72, 0.92, 0.42), mask.b);
           vec3 forestCol = mix(texture2D(uForest, wp * 0.21).rgb, texture2D(uForest, wp * 0.053 + 1.3).rgb, 0.5) * vec3(0.6, 0.6, 0.5);
+          forestCol = mix(forestCol, grassCol * 0.55, smoothstep(0.3, 0.62, gB.g) * 0.8);
           vec3 gravelCol = texture2D(uGravel, wp * 0.47).rgb * vec3(1.0, 0.96, 0.9);
           vec3 pebbleCol = texture2D(uPebbles, wp * 0.55).rgb;
 

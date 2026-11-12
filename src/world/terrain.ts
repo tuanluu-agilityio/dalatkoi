@@ -10,7 +10,7 @@ export function landHeight(x: number, z: number): number {
   const outside = smoothstep(24, 95, d);
   const rolling = (fbm2(x * 0.07 + 3.1, z * 0.07 - 1.7, 3) - 0.5) * (0.06 + 1.6 * smoothstep(16, 40, d));
   const hills = Math.pow(outside, 1.35) * (7 + 13 * fbm2(x * 0.011 + 40, z * 0.011 + 12, 4));
-  const backRise = smoothstep(18, 130, -z) * 9;
+  const backRise = smoothstep(18, 130, -z) * 5;
   const leftRise = smoothstep(30, 140, -x) * 3;
   return rolling + hills + backRise * outside + leftRise * outside;
 }

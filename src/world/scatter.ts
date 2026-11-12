@@ -57,14 +57,14 @@ function build() {
     if (isOpen(x, z, 0.5)) pines.push(place(x, z, rng.range(0.95, 1.3), rng() * TAU, rng.int(0, 3), rng()));
   }
   let guard = 0;
-  while (pines.length < 250 && guard++ < 20000) {
+  while (pines.length < 330 && guard++ < 40000) {
     const a = rng() * TAU;
     const r = 16.5 + 92 * Math.pow(rng(), 1.55);
     const x = CLEARING.cx + Math.cos(a) * r;
     const z = CLEARING.cz + Math.sin(a) * r;
     if ((x / 18) ** 2 + ((z - 2.5) / 16.5) ** 2 < 1) continue;
     if (!isOpen(x, z, 0.6)) continue;
-    const spacing = 2.9 + r * 0.035;
+    const spacing = 2.7 + r * 0.028;
     if (!farEnough(pines, x, z, spacing)) continue;
     pines.push(place(x, z, rng.range(0.8, 1.35), rng() * TAU, rng.int(0, 3), rng()));
   }

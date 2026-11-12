@@ -24,4 +24,6 @@ export const runtime = {
   joyY: 0,
   /** Development aid: [x, y, z, lookX, lookY, lookZ, fov?] overrides the camera when set. */
   debugPose: null as number[] | null,
+  /** The live WebGL renderer, for the performance readout. */
+  renderer: null as import('three').WebGLRenderer | null,
 };

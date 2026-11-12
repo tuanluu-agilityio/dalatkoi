@@ -50,7 +50,7 @@ function smoothNormals(geo: THREE.BufferGeometry): void {
 /** An irregular flat paving stone, radius ~1, lying on the ground. */
 export function flagstoneGeometry(seed: number): THREE.BufferGeometry {
   const sides = 9;
-  const geo = new THREE.CylinderGeometry(1, 1.06, 0.09, sides, 1);
+  const geo = new THREE.CylinderGeometry(1, 1.04, 0.05, sides, 1);
   const p = geo.attributes.position;
   const uv = geo.attributes.uv;
   for (let i = 0; i < p.count; i++) {
@@ -119,7 +119,7 @@ export function rockMaterial(anisotropy: number): THREE.MeshStandardMaterial {
 export function pavingMaterial(anisotropy: number): THREE.MeshStandardMaterial {
   if (!paving) {
     const pbr = getPBR('rock', 1, 1, anisotropy);
-    paving = new THREE.MeshStandardMaterial({ map: pbr.map, normalMap: pbr.normalMap, roughnessMap: pbr.roughnessMap, color: '#d8d2c4', roughness: 1 });
+    paving = new THREE.MeshStandardMaterial({ normalMap: pbr.normalMap, roughnessMap: pbr.roughnessMap, color: '#8f897d', roughness: 1 });
   }
   return paving;
 }

@@ -10,10 +10,13 @@ import { CameraRig } from './camera/CameraRig';
 import { Cabin } from './cabin/Cabin';
 import { KoiSchool } from './koi/KoiSchool';
 import { Pond } from './pond/Pond';
+import { PostFX } from './effects/PostFX';
+import { Atmosphere } from './environment/Atmosphere';
 import { Mountains } from './environment/Mountains';
 import { Terrain } from './environment/Terrain';
 import { Lighting } from './lighting/Lighting';
 import { HAZE_COLOR, SkyDome } from './lighting/SkyDome';
+import { Vegetation } from './vegetation/Vegetation';
 import { WindClock } from './vegetation/wind';
 
 /** Flags the scene as ready once textures have settled and a few frames have been drawn. */
@@ -41,6 +44,18 @@ function ReadySignal() {
   return null;
 }
 
+/** The main camera also sees layer 1 (grass, flowers, mist); the water reflection camera does not. */
+function ReflectionLayers(): null {
+  const camera = useThree((s) => s.camera);
+  useEffect(() => {
+    camera.layers.enable(1);
+  }, [camera]);
+  return null;
+}
+
+/** Dev-only: `?off=post,atmo,veg,koi,pond,cabin` disables systems for bisecting. */
+const OFF = new Set(import.meta.env.DEV ? (new URLSearchParams(window.location.search).get('off') ?? '').split(',') : []);
+
 export default function Experience() {
   const quality = useStore((s) => s.quality);
   const dprScale = useStore((s) => s.dprScale);
@@ -60,6 +75,7 @@ export default function Experience() {
       gl={{ antialias: !profile.smaa, powerPreference: 'high-performance', stencil: false, alpha: false }}
       camera={{ fov: 55, near: 0.08, far: 1400, position: [SPAWN.x, EYE_HEIGHT, SPAWN.z] }}
       onCreated={({ gl, scene }) => {
+        runtime.renderer = gl;
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 0.92;
         scene.fog = new THREE.FogExp2(HAZE_COLOR, 0.0105);
@@ -68,15 +84,19 @@ export default function Experience() {
     >
       <WindClock />
       <CameraRig />
+      <ReflectionLayers />
       <Lighting profile={profile} />
       <SkyDome />
       <Suspense fallback={null}>
         <Terrain profile={profile} />
         <Mountains />
-        <Cabin profile={profile} />
-        <Pond profile={profile} />
-        <KoiSchool profile={profile} />
+        {!OFF.has('cabin') && <Cabin profile={profile} />}
+        {!OFF.has('pond') && <Pond profile={profile} />}
+        {!OFF.has('koi') && <KoiSchool profile={profile} />}
+        {!OFF.has('veg') && <Vegetation profile={profile} />}
+        {!OFF.has('atmo') && <Atmosphere profile={profile} />}
       </Suspense>
+      {!OFF.has('post') && <PostFX profile={profile} />}
       <ReadySignal />
     </Canvas>
   );

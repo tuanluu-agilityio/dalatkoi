@@ -39,7 +39,7 @@ export function Flagstones({ profile }: { profile: QualityProfile }) {
     const lists: InstanceSpec[][] = [[], [], [], []];
     for (const p of SCATTER.flagstones) {
       lists[p.variant].push({
-        matrix: trs(p.x, p.y + 0.012, p.z, (p.tint - 0.5) * 0.04, p.rot, 0, p.scale * (1.05 + p.tint * 0.3), 1, p.scale),
+        matrix: trs(p.x, p.y + 0.004, p.z, (p.tint - 0.5) * 0.04, p.rot, 0, p.scale * (1.05 + p.tint * 0.3), 1, p.scale),
         color: tintOf(p.tint, 0.78, 1.05),
       });
     }

@@ -14,6 +14,13 @@ describe('detectQuality', () => {
   it('desktop discrete GPU → high', () => {
     expect(detectQuality({ touch: false, memory: 16, cores: 12, renderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11)' })).toBe('high');
   });
+  it('integrated Intel Arc (no model number) → medium', () => {
+    expect(detectQuality({ touch: false, memory: 32, cores: 22, renderer: 'ANGLE (Intel, Intel(R) Arc(TM) Graphics (0x00007D55) Direct3D11)' })).toBe('medium');
+  });
+  it('discrete Intel Arc A/B series → high', () => {
+    expect(detectQuality({ touch: false, memory: 16, cores: 12, renderer: 'ANGLE (Intel, Intel(R) Arc(TM) A770 Graphics Direct3D11)' })).toBe('high');
+    expect(detectQuality({ touch: false, memory: 16, cores: 12, renderer: 'ANGLE (Intel, Intel(R) Arc(TM) B580 Graphics Direct3D11)' })).toBe('high');
+  });
   it('software renderer → low', () => {
     expect(detectQuality({ touch: false, memory: 16, cores: 12, renderer: 'Google SwiftShader' })).toBe('low');
   });

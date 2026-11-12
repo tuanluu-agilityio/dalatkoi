@@ -307,3 +307,66 @@ export function bladeTuftTexture(seed = 1): THREE.CanvasTexture {
   bleed(ctx, [86, 126, 52]);
   return cutout(canvas);
 }
+
+/**
+ * A pine spray: a twig with side shoots, each ending in a pom-pom of long
+ * needles with sky showing between them. Base of the twig at the bottom centre.
+ */
+export function pineSprayTexture(seed = 1): THREE.CanvasTexture {
+  const size = 512;
+  const [canvas, ctx] = makeCanvas(size);
+  const rng = createRng(seed * 4099);
+  ctx.lineCap = 'round';
+
+  const tuft = (cx: number, cy: number, radius: number, aim: number) => {
+    const needles = 64;
+    for (let i = 0; i < needles; i++) {
+      // needles spray mostly forward of the shoot, a few backward
+      const a = aim + rng.gauss() * 1.35;
+      const len = radius * rng.range(0.55, 1.05);
+      const droop = radius * 0.22;
+      const ex = cx + Math.cos(a) * len;
+      const ey = cy + Math.sin(a) * len + droop;
+      const g = ctx.createLinearGradient(cx, cy, ex, ey);
+      const tone = rng();
+      g.addColorStop(0, rgb(mixRgb([70, 96, 40], [118, 142, 60], tone)));
+      g.addColorStop(1, rgb(mixRgb([34, 70, 34], [84, 124, 52], tone)));
+      ctx.strokeStyle = g;
+      ctx.lineWidth = rng.range(1.5, 2.6);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.quadraticCurveTo((cx + ex) / 2, (cy + ey) / 2 - droop * 0.4, ex, ey);
+      ctx.stroke();
+    }
+  };
+
+  const shoots: { x0: number; y0: number; x1: number; y1: number }[] = [{ x0: 0.5, y0: 1, x1: 0.5, y1: 0.24 }];
+  const n = 7;
+  for (let i = 0; i < n; i++) {
+    const t = 0.18 + (i / (n - 1)) * 0.62;
+    const side = i % 2 ? 1 : -1;
+    const y0 = 1 - t * 0.76;
+    const reach = rng.range(0.2, 0.34) * (1 - t * 0.35);
+    shoots.push({ x0: 0.5, y0, x1: 0.5 + side * reach, y1: y0 - rng.range(0.1, 0.2) });
+  }
+  // wood first, needles on top
+  for (const s of shoots) {
+    ctx.strokeStyle = rgb([78, 58, 40]);
+    ctx.lineWidth = s.x0 === s.x1 ? 5 : 3.2;
+    ctx.beginPath();
+    ctx.moveTo(s.x0 * size, s.y0 * size);
+    ctx.lineTo(s.x1 * size, s.y1 * size);
+    ctx.stroke();
+  }
+  for (const s of shoots) {
+    const aim = Math.atan2(s.y1 - s.y0, s.x1 - s.x0);
+    tuft(s.x1 * size, s.y1 * size, size * rng.range(0.105, 0.14), aim);
+    const mx = s.x0 + (s.x1 - s.x0) * 0.6;
+    const my = s.y0 + (s.y1 - s.y0) * 0.6;
+    if (s.x0 !== s.x1 && rng() < 0.6) tuft(mx * size, my * size, size * rng.range(0.07, 0.1), aim + rng.range(-0.8, 0.8));
+  }
+  bleed(ctx, [60, 96, 44]);
+  const tex = cutout(canvas);
+  tex.anisotropy = 8;
+  return tex;
+}
