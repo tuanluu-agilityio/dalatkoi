@@ -22,4 +22,6 @@ export const runtime = {
   /** Joystick vector written by the touch UI, read by the walk controller. */
   joyX: 0,
   joyY: 0,
+  /** Development aid: [x, y, z, lookX, lookY, lookZ, fov?] overrides the camera when set. */
+  debugPose: null as number[] | null,
 };

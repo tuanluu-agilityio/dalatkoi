@@ -1,0 +1,59 @@
+:root {
+  --ink: #0d100c;
+  --bark: #2a211a;
+  --moss: #5d6b4a;
+  --mist: #ecebe3;
+  --mist-dim: rgba(236, 235, 227, 0.62);
+  --amber: #d9b77c;
+  --glass: rgba(18, 22, 16, 0.42);
+  --hairline: rgba(236, 235, 227, 0.18);
+  --display: 'Cormorant Garamond', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --ui: 'Jost', 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--ink);
+  color: var(--mist);
+  font-family: var(--ui);
+  font-weight: 300;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.stage {
+  position: fixed;
+  inset: 0;
+}
+
+.stage canvas {
+  display: block;
+  outline: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 1px solid var(--amber);
+  outline-offset: 3px;
+}

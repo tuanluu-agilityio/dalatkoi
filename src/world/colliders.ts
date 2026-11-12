@@ -41,8 +41,8 @@ export const VERANDA_POSTS: [number, number][] = [
 export const FURNITURE = {
   chairs: [[2.15, 3.72, 0.12], [3.55, 3.75, -0.14]] as [number, number, number][],
   table: [2.85, 3.5] as [number, number],
-  pots: [[-4.05, 5.15, 0.3], [-0.2, 3.35, 0.26], [4.05, 5.2, 0.28], [-3.6, 3.3, 0.22], [-2.95, 6.05, 0.24]] as [number, number, number][],
-  bench: [-2.6, 3.42] as [number, number],
+  pots: [[-4.05, 5.15, 0.3], [-0.2, 3.35, 0.26], [4.05, 5.2, 0.28], [-2.42, 3.32, 0.22], [-2.95, 6.05, 0.24]] as [number, number, number][],
+  bench: [-3.4, 3.42] as [number, number],
 };
 export const CHIMNEY = { lx: DECK.x1 + 0.45, lz: -0.8, hw: 0.5, hd: 0.7 };
 
