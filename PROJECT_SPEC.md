@@ -51,11 +51,11 @@ binding.
 ### 3.1 Camera
 | Mode | Behaviour |
 |---|---|
-| **Walk** (first person) | WASD / arrows move, Shift walks briskly, mouse looks (pointer lock on click, or click-drag without lock), wheel adjusts field of view (40–75°). Touch: left-thumb joystick moves, drag elsewhere looks. Eye height 1.65 m, walk 1.5 m/s, brisk 2.9 m/s, exponential acceleration/deceleration, subtle head bob tied to stride. ESC leaves pointer lock; a second ESC returns to the cinematic camera. |
-| **Cinematic** | Seven looping shots (aerial wide → approach to cabin → low over pond → koi close-up → across the bridge → from the veranda to the forest → final wide). Spline-driven position and look-at; shots dissolve through a short dip-to-dark so there are no hard cuts. Depth of field is active in this mode on High quality. |
-| **Orbit** | Drag to rotate, wheel/pinch to zoom, damped. Distance 7–34 m, elevation limited so the camera never goes under ground or into the tree line. |
+| **Walk** (first person) | WASD / arrows move, Shift jogs, mouse looks (pointer lock on click, or click-drag without lock), wheel adjusts field of view (30–70°). Touch: left-thumb joystick moves, drag elsewhere looks. Eye height 1.65 m, walk 1.9 m/s, jog 3.4 m/s, exponential acceleration/deceleration, subtle head bob tied to stride (off when the system asks for reduced motion). ESC leaves pointer lock and closes any open panel or note. |
+| **Cinematic** | Seven looping shots (arrival up the path → low across the water → koi close-up → the footbridge → the veranda → looking up into the pines → wide over the clearing). Each is a slow straight dolly with its own lens and focus distance; shots dissolve through a short dip-to-dark so there are no hard cuts. The first two shots are the opening sequence. Depth of field is active in this mode on High quality. |
+| **Orbit** | Drag to rotate, wheel/pinch to zoom, slow auto-rotation when left alone. Distance 9–28 m, elevation limited so the camera never goes under ground or into the tree line. |
 
-All mode changes blend the camera from its current pose over 1.8 s.
+Walk ↔ Orbit blends the camera from its current pose over 1.8 s; changes to or from the tour dip to dark (1.1 s) instead of flying through the trees.
 
 **Collision (walk mode).** The visitor cannot pass through cabin walls, veranda railings, posts,
 furniture, tree trunks, boulders, pond-edge rocks, or bridge railings; cannot enter the water
@@ -111,7 +111,7 @@ All sound is synthesized at runtime with the Web Audio API (original; nothing re
 | Bus | Content |
 |---|---|
 | Ambient | Pine wind (gusting filtered noise), leaf rustle, distant forest bed, far bird calls with reverb |
-| Environment | Positional birds (4 synthesized species at changing positions in the trees), pond trickle and bubbles at the spout and rocks, koi plops at the fish position, cabin creaks, wind chime |
+| Environment | Positional birds (5 synthesized song types at changing positions in the trees), pond trickle and bubbles at the spout and rocks, koi plops at the fish position, cabin creaks, wind chime |
 | Footsteps | Grass, gravel, stone, bridge wood, veranda wood; level follows walking speed |
 
 Master / ambient / environment / footstep volumes, mute, 60 ms–1.5 s smoothed transitions,
@@ -137,8 +137,8 @@ HRTF panners with inverse distance roll-off. Nothing plays before the Enter clic
 | Profile | Target | Summary |
 |---|---|---|
 | High | 60 FPS desktop dGPU | DPR ≤ 1.75, 4096 shadows, 1024 reflection, AO + bloom + DoF, full vegetation |
-| Medium | 60 FPS laptop iGPU / good tablet | DPR ≤ 1.25, 2048 shadows, 512 reflection, bloom only, ~55% vegetation |
-| Low | 30+ FPS phones | DPR 1, 1024 shadows, sky-only reflection, no post chain, ~25% vegetation |
+| Medium | 60 FPS laptop iGPU / good tablet | DPR ≤ 1.25, 2048 shadows, 512 reflection, bloom only, ~45–65% vegetation |
+| Low | 30+ FPS phones | DPR 1, 1024 shadows, sky-only reflection, no post chain, ~15–35% vegetation |
 
 Auto-selected from device signals; a runtime monitor lowers resolution, then the profile, if the
 frame rate stays low. Repeated vegetation is instanced; distant pines use a cheaper model.

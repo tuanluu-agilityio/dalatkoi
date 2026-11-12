@@ -47,8 +47,8 @@ export const SHOTS: Shot[] = [
   {
     name: 'arrival',
     duration: 10,
-    from: [0.3, 3.3, 27],
-    to: [0.9, 1.9, 18.6],
+    from: [-0.9, 3.3, 27],
+    to: [-0.4, 1.9, 18.8],
     lookFrom: [6.2, 2.6, -6],
     lookTo: [6.4, 2.0, -6],
     fov: [52, 47],

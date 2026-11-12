@@ -91,6 +91,10 @@ export function applyWind<T extends THREE.Material>(material: T, opts: WindOptio
 
 /** Depth material with the same wind (so shadows sway with the plant) and alpha test. */
 export function windDepthMaterial(opts: WindOptions, map?: THREE.Texture, alphaTest = 0.5): THREE.MeshDepthMaterial {
-  const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: map ? alphaTest : 0 });
+  const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+  if (map) {
+    depth.map = map;
+    depth.alphaTest = alphaTest;
+  }
   return applyWind(depth, opts);
 }
