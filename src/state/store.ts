@@ -8,6 +8,8 @@ export type VolumeBus = 'master' | 'ambient' | 'environment' | 'footsteps';
 export interface AppState {
   phase: Phase;
   sceneReady: boolean;
+  /** 0..1 loading progress shown on the title screen; never goes backwards. */
+  loadProgress: number;
   cameraMode: CameraMode;
   quality: QualityLevel;
   autoQuality: boolean;
@@ -22,6 +24,7 @@ export interface AppState {
   isTouch: boolean;
 
   setSceneReady: () => void;
+  setLoadProgress: (value: number) => void;
   enter: (withSound: boolean) => void;
   finishIntro: () => void;
   setCameraMode: (mode: CameraMode) => void;
@@ -41,6 +44,7 @@ const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v))
 export const useStore = create<AppState>()((set, get) => ({
   phase: 'loading',
   sceneReady: false,
+  loadProgress: 0,
   cameraMode: 'cinematic',
   quality: 'medium',
   autoQuality: true,
@@ -52,7 +56,11 @@ export const useStore = create<AppState>()((set, get) => ({
   pointerLocked: false,
   isTouch: false,
 
-  setSceneReady: () => set((s) => ({ sceneReady: true, phase: s.phase === 'loading' ? 'ready' : s.phase })),
+  setSceneReady: () => set((s) => ({ sceneReady: true, loadProgress: 1, phase: s.phase === 'loading' ? 'ready' : s.phase })),
+  setLoadProgress: (value) => {
+    const v = clamp01(value);
+    if (Number.isFinite(value) && v > get().loadProgress) set({ loadProgress: v });
+  },
   enter: (withSound) => {
     if (get().phase !== 'ready') return;
     set({ phase: 'intro', cameraMode: 'cinematic', muted: !withSound });

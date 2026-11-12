@@ -1,12 +1,14 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Suspense, useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { texturesSettled } from '../assets/textureManager';
+import { getTextureProgress, onTextureProgress, texturesSettled } from '../assets/textureManager';
 import { QUALITY } from '../config/quality';
 import { runtime } from '../state/runtime';
 import { useStore } from '../state/store';
 import { EYE_HEIGHT, SPAWN } from '../world/layout';
-import { CameraRig } from './camera/CameraRig';
+import { CameraRig, PoiWatcher } from './camera/CameraRig';
+import { AudioSync } from './systems/AudioSync';
+import { PerformanceManager } from './systems/PerformanceManager';
 import { Cabin } from './cabin/Cabin';
 import { KoiSchool } from './koi/KoiSchool';
 import { Pond } from './pond/Pond';
@@ -26,12 +28,20 @@ function ReadySignal() {
   const gl = useThree((s) => s.gl);
   useEffect(() => {
     let alive = true;
+    // the first 30% of the bar is the scene code arriving; textures fill the rest
+    const report = () => {
+      const p = getTextureProgress();
+      useStore.getState().setLoadProgress(0.3 + 0.65 * (p.total > 0 ? p.done / p.total : 1));
+    };
+    report();
+    const off = onTextureProgress(report);
     const timeout = new Promise<void>((r) => setTimeout(r, 12000));
     Promise.race([texturesSettled(), timeout]).then(() => {
       if (alive) settled.current = true;
     });
     return () => {
       alive = false;
+      off();
     };
   }, []);
   useFrame(() => {
@@ -76,6 +86,10 @@ export default function Experience() {
       camera={{ fov: 55, near: 0.08, far: 1400, position: [SPAWN.x, EYE_HEIGHT, SPAWN.z] }}
       onCreated={({ gl, scene }) => {
         runtime.renderer = gl;
+        gl.domElement.addEventListener('webglcontextlost', (e) => {
+          e.preventDefault();
+          window.dispatchEvent(new Event('dalat:contextlost'));
+        });
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 0.92;
         scene.fog = new THREE.FogExp2(HAZE_COLOR, 0.0105);
@@ -97,6 +111,9 @@ export default function Experience() {
         {!OFF.has('atmo') && <Atmosphere profile={profile} />}
       </Suspense>
       {!OFF.has('post') && <PostFX profile={profile} />}
+      <PoiWatcher />
+      <AudioSync />
+      <PerformanceManager />
       <ReadySignal />
     </Canvas>
   );

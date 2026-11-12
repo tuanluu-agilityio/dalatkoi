@@ -39,3 +39,23 @@ describe('store', () => {
     expect(useStore.getState().autoQuality).toBe(false);
   });
 });
+
+describe('load progress', () => {
+  beforeEach(() => useStore.setState(useStore.getInitialState(), true));
+
+  it('only moves forward and stays within 0..1', () => {
+    const s = useStore.getState();
+    s.setLoadProgress(0.4);
+    s.setLoadProgress(0.2);
+    expect(useStore.getState().loadProgress).toBeCloseTo(0.4, 6);
+    s.setLoadProgress(7);
+    expect(useStore.getState().loadProgress).toBe(1);
+    s.setLoadProgress(Number.NaN);
+    expect(useStore.getState().loadProgress).toBe(1);
+  });
+
+  it('is complete once the scene is ready', () => {
+    useStore.getState().setSceneReady();
+    expect(useStore.getState().loadProgress).toBe(1);
+  });
+});

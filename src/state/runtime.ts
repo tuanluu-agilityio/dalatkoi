@@ -18,6 +18,9 @@ export const runtime = {
   /** Slow gust signal 0..1 shared by wind visuals and wind audio. */
   gust: 0.4,
   fps: 60,
+  /** Draw statistics of the last main render pass, for the performance readout. */
+  drawCalls: 0,
+  triangles: 0,
   time: 0,
   /** Joystick vector written by the touch UI, read by the walk controller. */
   joyX: 0,
