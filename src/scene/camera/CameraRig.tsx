@@ -36,8 +36,42 @@ const viewOf = (phase: string, mode: string): View =>
 
 const smooth = (k: number) => k * k * (3 - 2 * k);
 
-/** Where the visitor stands. Module-level so it survives the scene being rebuilt on a quality change. */
+/**
+ * Camera state that must survive the scene being rebuilt on a quality change: where the visitor
+ * stands, where the tour has got to, how the orbit is framed.
+ */
 const WALKER = createWalkState();
+const RIG = {
+  view: 'title' as View,
+  cineTime: 0,
+  walkFov: WALK_FOV,
+  orbit: { az: 0.5, polar: 1.12, dist: 22, idle: 10 },
+};
+/** Ref-shaped accessors onto RIG, so the rig code reads the same as with useRef. */
+const VIEW = {
+  get current(): View {
+    return RIG.view;
+  },
+  set current(v: View) {
+    RIG.view = v;
+  },
+};
+const CINE_TIME = {
+  get current(): number {
+    return RIG.cineTime;
+  },
+  set current(v: number) {
+    RIG.cineTime = v;
+  },
+};
+const WALK_LENS = {
+  get current(): number {
+    return RIG.walkFov;
+  },
+  set current(v: number) {
+    RIG.walkFov = v;
+  },
+};
 
 /**
  * The one camera. Three ways of seeing the place share it:
@@ -52,11 +86,11 @@ export function CameraRig(): null {
   const keys = useRef(new Set<string>());
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef(0);
-  const orbit = useRef({ az: 0.5, polar: 1.12, dist: 22, idle: 10 });
-  const walkFov = useRef(WALK_FOV);
-  const view = useRef<View>('title');
+  const orbit = useRef(RIG.orbit);
+  const walkFov = WALK_LENS;
+  const view = VIEW;
   const transition = useRef<Transition | null>(null);
-  const cineTime = useRef(0);
+  const cineTime = CINE_TIME;
   const sample = useRef({} as CinematicSample);
   const reducedMotion = useRef(false);
   const scratch = useRef({
@@ -88,13 +122,18 @@ export function CameraRig(): null {
     const onKeyDown = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+      // a shortcut, not a step: macOS never sends the matching keyup while Cmd is held
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (MOVE_KEYS.has(e.code)) {
         keys.current.add(e.code);
         if (e.code.startsWith('Arrow')) e.preventDefault();
       }
       if (e.code === 'KeyE' && !e.repeat) events.emit('interact', undefined);
     };
-    const onKeyUp = (e: KeyboardEvent) => keys.current.delete(e.code);
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code.startsWith('Meta')) keys.current.clear();
+      else keys.current.delete(e.code);
+    };
     const clearKeys = () => keys.current.clear();
 
     const onPointerDown = (e: PointerEvent) => {
@@ -201,7 +240,8 @@ export function CameraRig(): null {
       if (next !== 'walk' && document.pointerLockElement === gl.domElement) document.exitPointerLock();
       keys.current.clear();
       if (prev !== 'title') {
-        const far = prev === 'cinematic' || next === 'cinematic';
+        // also dip when the screen is already dark or darkening, so a fade is never cut short
+        const far = prev === 'cinematic' || next === 'cinematic' || runtime.fade > 0.05;
         transition.current = {
           kind: far ? 'dip' : 'blend',
           // already dark (a cut in the tour)? then only the second half of the dip is needed

@@ -142,11 +142,26 @@ export function Hud() {
     };
   }, [exploring, wake, toggleFullscreen, toggleNote]);
 
+  // the opening can be skipped with any key, click or tap (after a beat, so the Enter click does not count)
+  useEffect(() => {
+    if (phase !== 'intro') return;
+    const skip = () => events.emit('skipIntro', undefined);
+    const arm = setTimeout(() => {
+      window.addEventListener('keydown', skip);
+      window.addEventListener('pointerdown', skip);
+    }, 900);
+    return () => {
+      clearTimeout(arm);
+      window.removeEventListener('keydown', skip);
+      window.removeEventListener('pointerdown', skip);
+    };
+  }, [phase]);
+
   if (phase === 'intro') {
     return (
       <div className="hud">
         <button className="pill skip" onClick={() => events.emit('skipIntro', undefined)}>
-          Skip intro
+          Skip intro · any key
         </button>
       </div>
     );

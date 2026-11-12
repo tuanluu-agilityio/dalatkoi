@@ -77,3 +77,27 @@ tiles.
 ### TD-13 · Execution method
 The plan was executed inline in one session rather than by per-task subagents: the modules share
 one world layout and one visual language, and visual tuning needs a single eye across all of them.
+
+### TD-14 · Ambient occlusion at full resolution
+N8AO's half-resolution mode builds a multiple-render-target class that three.js 0.187 no longer
+accepts; it threw on every frame. The effect now runs on its full-resolution path with the
+"performance" preset, on the High profile only.
+*Cost:* AO is more expensive than planned, which is one reason integrated GPUs start on Medium.
+
+### TD-15 · Dip to dark for distant camera changes
+TD-10 planned to blend poses on every mode switch. In practice the tour's shots are tens of
+metres from the walker, and a 1.8 s straight-line blend flies through trunks and the cabin. Walk ↔
+Orbit still blends; anything to or from the tour dips to dark for 1.1 s.
+
+### TD-16 · Adaptive quality lowers, but never raises, the profile
+Changing profile rebuilds the scene (the Canvas is keyed by level), which costs a second or two.
+Raising it automatically would oscillate on a borderline device, so the monitor only gives back
+render resolution; moving up a level is the visitor's choice in the Graphics panel.
+
+### TD-17 · Intel Arc: integrated by default
+"Intel Arc" names both discrete cards (A- and B-series, with a model number) and the integrated
+graphics in recent laptop chips (no model number). Only the former are treated as discrete.
+
+### TD-18 · Collision by linear scan
+The architecture first called for a uniform grid. With a few hundred shapes and one walker the
+scan costs microseconds, so the grid was not built.

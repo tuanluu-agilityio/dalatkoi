@@ -96,6 +96,25 @@ describe('AudioEngine', () => {
     expect(fake.created.bufferSource - before).toBeLessThan(60);
   });
 
+  it('does not build a positioned source for a voice it will refuse', () => {
+    const fake = createFakeContext();
+    const engine = new AudioEngine();
+    engine.start(() => fake.ctx);
+    for (let i = 0; i < 40; i++) engine.plop(0, 0, 1);
+    const before = fake.created.panner;
+    for (let i = 0; i < 40; i++) engine.plop(0, 0, 1);
+    expect(fake.created.panner).toBe(before);
+  });
+
+  it('resumes from an interrupted context as well as a suspended one', () => {
+    const fake = createFakeContext();
+    const engine = new AudioEngine();
+    engine.start(() => fake.ctx);
+    (fake.ctx as unknown as { state: string }).state = 'interrupted';
+    engine.resume();
+    expect(fake.ctx.state).toBe('running');
+  });
+
   it('suspends, resumes and closes the context', () => {
     const fake = createFakeContext();
     const engine = new AudioEngine();

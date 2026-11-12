@@ -1,5 +1,6 @@
 import { Component, Suspense, lazy, useEffect, useState, type ReactNode } from 'react';
 import { detectedQuality, deviceSignals, webglAvailable } from './config/device';
+import { audio } from './audio/AudioEngine';
 import { useStore } from './state/store';
 import { FadeOverlay } from './ui/FadeOverlay';
 import { Fallback } from './ui/Fallback';
@@ -36,6 +37,11 @@ export default function App() {
     window.addEventListener('dalat:contextlost', lost);
     return () => window.removeEventListener('dalat:contextlost', lost);
   }, []);
+
+  // without the scene there are no sound controls, so the sound must not outlive it
+  useEffect(() => {
+    if (problem !== 'none') audio.dispose();
+  }, [problem]);
 
   if (problem !== 'none') return <Fallback reason={problem} />;
 

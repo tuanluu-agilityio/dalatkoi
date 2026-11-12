@@ -9,7 +9,8 @@ export interface AdaptState {
 }
 
 export const MIN_DPR_SCALE = 0.6;
-const LOW_FPS = 30;
+/** Clearly under 30, so a display or power mode capped at 30 fps is not read as a slow device. */
+const LOW_FPS = 26;
 const VERY_LOW_FPS = 18;
 const GOOD_FPS = 56;
 const GOOD_WINDOWS_NEEDED = 3;

@@ -86,7 +86,7 @@ export const WaterShader = {
       vec3 N = normalize(vec3(-n.x, 1.0, -n.y));
       vec3 V = normalize(cameraPosition - vWorld);
       float ndv = max(dot(N, V), 0.0);
-      float fresnel = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
+      float fresnel = 0.02 + 0.98 * pow(clamp(1.0 - ndv, 0.0, 1.0), 5.0);
 
       // reflection
       vec3 refl;

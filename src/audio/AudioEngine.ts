@@ -73,6 +73,8 @@ export class AudioEngine {
   private voices: number[] = [];
   private lastStep = -1;
   private timers = { bird: 2.5, drip: 0.4, creak: 14, chime: 6 };
+  /** Context time at which the opening fade-in ends. */
+  private fadeInEnd = 0;
 
   /** Where the fixed sources are. Takes effect for sources created after the call, so set it before `start`. */
   setSources(sources: SoundSources): void {
@@ -144,7 +146,8 @@ export class AudioEngine {
 
     // rise gently out of silence rather than switching on
     master.gain.setValueAtTime(0, ctx.currentTime);
-    master.gain.linearRampToValueAtTime(this.levels.master, ctx.currentTime + 2.5);
+    this.fadeInEnd = ctx.currentTime + 2.5;
+    master.gain.linearRampToValueAtTime(this.levels.master, this.fadeInEnd);
   }
 
   /** A positioned source. HRTF panning lets headphones place it around the listener's head. */
@@ -195,7 +198,13 @@ export class AudioEngine {
     for (const key of Object.keys(this.buses) as VolumeBus[]) {
       const g = this.buses[key].gain;
       g.cancelScheduledValues(t);
-      g.setTargetAtTime(this.levels[key], t, 0.12);
+      if (key === 'master' && t < this.fadeInEnd) {
+        // still rising out of silence: keep the slow ramp, just aim it at the new level
+        g.setValueAtTime(g.value, t);
+        g.linearRampToValueAtTime(this.levels.master, this.fadeInEnd);
+      } else {
+        g.setTargetAtTime(this.levels[key], t, 0.12);
+      }
     }
   }
 
@@ -232,8 +241,8 @@ export class AudioEngine {
       // somewhere up in the crowns around the clearing
       const a = Math.random() * Math.PI * 2;
       const d = rand(14, 44);
-      const out = this.placed(Math.cos(a) * d, rand(7, 19), 2 + Math.sin(a) * d, 9, 0.5);
-      if (out && this.claim(2)) birdsong(ctx, out, rand(0.16, 0.34));
+      const out = this.claim(2) ? this.placed(Math.cos(a) * d, rand(7, 19), 2 + Math.sin(a) * d, 9, 0.5) : null;
+      if (out) birdsong(ctx, out, rand(0.16, 0.34));
     }
 
     timers.drip -= step;
@@ -248,8 +257,8 @@ export class AudioEngine {
       timers.chime = gust > 0.55 ? rand(0.5, 3.2) / (0.4 + gust) : rand(2, 5);
       if (gust > 0.55 && Math.random() < 0.75) {
         const [x, y, z] = this.sources.chime;
-        const out = this.placed(x, y, z, 2.2, 0.35);
-        if (out && this.claim(2.9)) chime(ctx, out, rand(0.05, 0.11) * (0.6 + gust));
+        const out = this.claim(2.9) ? this.placed(x, y, z, 2.2, 0.35) : null;
+        if (out) chime(ctx, out, rand(0.05, 0.11) * (0.6 + gust));
       }
     }
 
@@ -257,8 +266,8 @@ export class AudioEngine {
     if (timers.creak <= 0) {
       timers.creak = rand(16, 42);
       const [x, y, z] = this.sources.cabin;
-      const out = this.placed(x + rand(-3, 3), y, z + rand(-2, 2), 2.5, 0.2);
-      if (out && this.claim(1)) creak(ctx, out, rand(0.05, 0.1));
+      const out = this.claim(1) ? this.placed(x + rand(-3, 3), y, z + rand(-2, 2), 2.5, 0.2) : null;
+      if (out) creak(ctx, out, rand(0.05, 0.1));
     }
   }
 
@@ -275,8 +284,8 @@ export class AudioEngine {
   plop(x: number, z: number, strength: number): void {
     const ctx = this.ctx;
     if (!ctx || !this.buffers) return;
-    const out = this.placed(x, this.sources.waterLevel, z, 2.6, 0.3);
-    if (out && this.claim(0.35)) plop(ctx, out, this.buffers, strength);
+    const out = this.claim(0.35) ? this.placed(x, this.sources.waterLevel, z, 2.6, 0.3) : null;
+    if (out) plop(ctx, out, this.buffers, strength);
   }
 
   suspend(): void {
@@ -284,7 +293,8 @@ export class AudioEngine {
   }
 
   resume(): void {
-    if (this.ctx && this.ctx.state === 'suspended') void this.ctx.resume();
+    // 'interrupted' is what iOS reports after a call or Siri
+    if (this.ctx && this.ctx.state !== 'running' && this.ctx.state !== 'closed') void this.ctx.resume();
   }
 
   dispose(): void {

@@ -59,7 +59,9 @@ public/textures/  27 WebP files
  └─ PoiWatcher · AudioSync · PerformanceManager · ReadySignal
 ```
 The Canvas is keyed by quality level, so changing profile rebuilds the scene with new budgets.
-The walker's position lives at module level and survives the rebuild.
+The walker's position, the tour clock and the orbit framing live at module level and survive the
+rebuild. A `ContextGuard` reports a genuinely lost graphics context to the app; it detaches before
+a rebuild, because r3f releases the old context on purpose.
 
 ## Camera
 `CameraRig` computes a target pose each frame for the current view and applies it.
@@ -122,7 +124,7 @@ is given back after three good windows; the profile is never raised automaticall
 code-split from the title screen.
 
 ## Testing
-- **Unit (Vitest, 92 tests):** world model, koi simulation, cinematic timeline, walk controller,
+- **Unit (Vitest, 95 tests):** world model, koi simulation, cinematic timeline, walk controller,
   audio engine against a fake context, quality detection, adaptation rule, store, texture fallback.
 - **Static:** `tsc --noEmit`, production build.
 - **In-browser:** load, enter, each camera mode, walking, notes, panels, phone-width layout.

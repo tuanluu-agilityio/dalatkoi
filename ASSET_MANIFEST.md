@@ -71,7 +71,7 @@ presses **Enter experience**.
 | three | MIT |
 | @react-three/fiber, @react-three/drei, @react-three/postprocessing | MIT |
 | postprocessing | Zlib |
-| n8ao (via @react-three/postprocessing) | CC0-1.0 |
+| n8ao (via @react-three/postprocessing) | ISC |
 | zustand | MIT |
 | vite, @vitejs/plugin-react, vitest, typescript, sharp (build/test only) | MIT / Apache-2.0 |
 

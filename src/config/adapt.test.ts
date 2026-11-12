@@ -47,6 +47,10 @@ describe('adaptQuality', () => {
     expect(s).toEqual({ level: 'medium', dprScale: 0.7, goodWindows: 0 });
   });
 
+  it('does not mistake a display capped at 30 fps for a struggling device', () => {
+    for (const fps of [29.6, 29.9, 30, 30.2]) expect(adaptQuality(base, fps)).toEqual(base);
+  });
+
   it('ignores meaningless measurements', () => {
     for (const fps of [Number.NaN, 0, -3, Number.POSITIVE_INFINITY]) expect(adaptQuality(base, fps)).toEqual(base);
   });

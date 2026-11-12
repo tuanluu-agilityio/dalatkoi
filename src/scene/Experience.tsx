@@ -54,6 +54,30 @@ function ReadySignal() {
   return null;
 }
 
+/**
+ * Reports a lost graphics context so the app can show its fallback. The listener is removed when
+ * the scene unmounts: rebuilding for a new quality level deliberately releases the old context,
+ * and that must not be mistaken for a failure.
+ */
+function ContextGuard(): null {
+  const gl = useThree((s) => s.gl);
+  useEffect(() => {
+    const canvas = gl.domElement;
+    let alive = true;
+    const onLost = (e: Event) => {
+      if (!alive || !canvas.isConnected || runtime.renderer !== gl) return;
+      e.preventDefault();
+      window.dispatchEvent(new Event('dalat:contextlost'));
+    };
+    canvas.addEventListener('webglcontextlost', onLost);
+    return () => {
+      alive = false;
+      canvas.removeEventListener('webglcontextlost', onLost);
+    };
+  }, [gl]);
+  return null;
+}
+
 /** The main camera also sees layer 1 (grass, flowers, mist); the water reflection camera does not. */
 function ReflectionLayers(): null {
   const camera = useThree((s) => s.camera);
@@ -86,10 +110,6 @@ export default function Experience() {
       camera={{ fov: 55, near: 0.08, far: 1400, position: [SPAWN.x, EYE_HEIGHT, SPAWN.z] }}
       onCreated={({ gl, scene }) => {
         runtime.renderer = gl;
-        gl.domElement.addEventListener('webglcontextlost', (e) => {
-          e.preventDefault();
-          window.dispatchEvent(new Event('dalat:contextlost'));
-        });
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 0.92;
         scene.fog = new THREE.FogExp2(HAZE_COLOR, 0.0105);
@@ -115,6 +135,7 @@ export default function Experience() {
       <AudioSync />
       <PerformanceManager />
       <ReadySignal />
+      <ContextGuard />
     </Canvas>
   );
 }
