@@ -8,6 +8,8 @@ import { useStore } from '../state/store';
 import { EYE_HEIGHT, SPAWN } from '../world/layout';
 import { CameraRig } from './camera/CameraRig';
 import { Cabin } from './cabin/Cabin';
+import { KoiSchool } from './koi/KoiSchool';
+import { Pond } from './pond/Pond';
 import { Mountains } from './environment/Mountains';
 import { Terrain } from './environment/Terrain';
 import { Lighting } from './lighting/Lighting';
@@ -72,6 +74,8 @@ export default function Experience() {
         <Terrain profile={profile} />
         <Mountains />
         <Cabin profile={profile} />
+        <Pond profile={profile} />
+        <KoiSchool profile={profile} />
       </Suspense>
       <ReadySignal />
     </Canvas>
