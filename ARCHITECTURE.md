@@ -37,7 +37,7 @@ src/
     effects/     PostFX.tsx
     systems/     AudioSync.tsx  PerformanceManager.tsx
     shared/      Instances.tsx  cards.ts  rocks.ts        shaders/noise.ts
-  audio/     AudioEngine.ts  synth/{noise,beds,voices}.ts  fakeContext.ts (test double)
+  audio/     AudioEngine.ts  spatial.ts  synth/{noise,beds,voices}.ts  fakeContext.ts (test double)
   ui/        TitleScreen  Hud  Joystick  FadeOverlay  Fallback  icons  styles/{global,ui}.css
 scripts/     fetch-textures.mjs (downloads and converts the CC0 textures)
 public/textures/  27 WebP files
@@ -98,7 +98,10 @@ the Enter click; before that every method is a no-op, and if Web Audio is missin
 silent. Positioned sources use HRTF `PannerNode`s with inverse roll-off. `AudioSync` (inside the
 Canvas) passes the camera pose and gust strength each frame, forwards footstep and fish events,
 applies volume and mute from the store, and suspends the context while the tab is hidden.
-One-shot voices are capped (18) and footsteps are rate-limited.
+One-shot voices are capped (18) and footsteps are rate-limited. Raindrops have no panner of
+their own: `spatial.ts` computes pan and distance gain once and the drop plays through one of
+nine fixed stereo lanes. Continuous layers are steered ten times a second and only when a target
+has changed (TD-23).
 
 ## Weather
 `weather/weather.ts` (pure) eases a small state toward the mode and intensity held in the store.
@@ -142,12 +145,19 @@ Instancing for everything repeated; merged static geometry for the cabin; one sh
 light; grass, flowers and mist are excluded from the water reflection pass (render layer 1); far
 pines use a lighter model and cast no shadows; pixel ratio is capped per profile.
 `PerformanceManager` measures the frame rate in 2.5 s windows and, on Auto, applies
-`config/adapt.ts`: lower resolution first (down to 0.6×), then step the profile down; resolution
-is given back after three good windows; the profile is never raised automatically. The scene is
+`config/adapt.ts`: lower resolution first (down to 0.6×), then step the profile down; between 26
+and 45 fps a lower resolution is only tried, and kept if the frame rate answers; resolution is
+given back after three good windows; the profile is never raised automatically. The scene is
 code-split from the title screen.
 
+Start-up: shader programs are compiled ahead of the first frame (`Warmup` in `Experience.tsx`;
+the frame loop starts when they are ready), and textures are decoded off the main thread with
+`createImageBitmap`. The pond's reflection is drawn from `useFrame` before the main render and
+skipped while the pond is out of view. The draw-call and triangle readout sums every pass of the
+frame. Reasons are in `TECHNICAL_DECISIONS.md`, TD-19 to TD-24.
+
 ## Testing
-- **Unit (Vitest, 117 tests):** world model, weather model, shelter, koi simulation, cinematic timeline, walk controller,
+- **Unit (Vitest, 141 tests):** world model, weather model, shelter, koi simulation, cinematic timeline, walk controller,
   audio engine against a fake context, quality detection, adaptation rule, store, texture fallback.
 - **Static:** `tsc --noEmit`, production build.
 - **In-browser:** load, enter, each camera mode, walking, notes, panels, phone-width layout.

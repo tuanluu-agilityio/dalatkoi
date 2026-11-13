@@ -76,6 +76,16 @@ known limitations. Past design decisions are in `TECHNICAL_DECISIONS.md` and
   8 more for rain); a new voice must go through `claim` or `rainDrop`.
 - **The HUD ignores the first click when idle**: it only wakes the interface. `R`, `1`–`3` and the
   other keys work at any time while exploring.
+- **The frame loop waits for shader warm-up.** `Warmup` in `Experience.tsx` compiles programs
+  before the first frame of every scene build; the Canvas is on `frameloop="never"` until then. A
+  material variant that the warm-up does not see (a different shadow type or output target)
+  compiles on first draw and brings the start-up freeze back.
+- **The pond's reflection is drawn from `useFrame`** in `Water.tsx`, not from the Reflector's
+  `onBeforeRender` (a nested render made every lit material re-resolve its program). It lags the
+  shadow map by one frame and is skipped when the pond is out of view.
+- **Audio parameters are scheduled only on change**, and the listener is set by value. Do not
+  call `setTargetAtTime` every frame, and do not give a short sound its own `PannerNode`: use
+  `placeSound` and the lanes, as `rainDrop` does.
 - **Collision is top-down shapes** in `world/colliders.ts`. A new solid object needs a collider
   there, and the tour path tests will fail if it blocks a shot.
 

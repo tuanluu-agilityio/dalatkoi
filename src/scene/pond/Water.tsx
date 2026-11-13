@@ -1,5 +1,5 @@
 import { useFrame, useThree } from '@react-three/fiber';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { Reflector } from 'three/examples/jsm/objects/Reflector.js';
 import { makeCanvas, pixelFill } from '../../assets/procedural/canvas';
@@ -34,21 +34,38 @@ function surfaceGeometry(): THREE.BufferGeometry {
   return new THREE.ShapeGeometry(shape, 1);
 }
 
+type RenderHook = (renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) => void;
+
+const frustum = new THREE.Frustum();
+const viewProjection = new THREE.Matrix4();
+const bounds = new THREE.Sphere();
+
 /** The pond surface: planar reflection on High/Medium, analytic sky reflection on Low. */
 export function Water({ profile }: { profile: QualityProfile }) {
   const scene = useThree((s) => s.scene);
+  const frames = useRef(0);
 
-  const mesh = useMemo(() => {
+  const { mesh, reflect } = useMemo(() => {
     const geometry = surfaceGeometry();
+    geometry.computeBoundingSphere();
     let m: THREE.Mesh;
+    let reflect: RenderHook | null = null;
     if (profile.reflectionSize > 0) {
-      m = new Reflector(geometry, {
+      const reflector = new Reflector(geometry, {
         textureWidth: profile.reflectionSize,
         textureHeight: profile.reflectionSize,
         clipBias: 0.02,
         multisample: 0,
         shader: WaterShader,
       });
+      // The Reflector draws its mirror image from inside the main render, as a nested render.
+      // three.js keeps a separate light state for a nested render, with a version number of its
+      // own, so every lit material saw "the lights changed" twice a frame and had its shader
+      // program looked up again each time: about a quarter of the frame on the main thread.
+      // Drawn from `useFrame` instead, before the main render, both passes share one light state.
+      reflect = reflector.onBeforeRender as unknown as RenderHook;
+      reflector.onBeforeRender = () => undefined;
+      m = reflector;
     } else {
       m = new THREE.Mesh(
         geometry,
@@ -71,7 +88,7 @@ export function Water({ profile }: { profile: QualityProfile }) {
     m.rotation.x = -Math.PI / 2;
     m.position.set(POND.cx, WATER_LEVEL, POND.cz);
     m.renderOrder = 2;
-    return m;
+    return { mesh: m, reflect };
   }, [profile.reflectionSize]);
 
   useEffect(() => {
@@ -88,7 +105,7 @@ export function Water({ profile }: { profile: QualityProfile }) {
     };
   }, [mesh]);
 
-  useFrame(() => {
+  useFrame(({ gl, camera }) => {
     const u = (mesh.material as THREE.ShaderMaterial).uniforms;
     u.uTime.value = windUniforms.uTime.value;
     u.uGust.value = windUniforms.uGust.value;
@@ -99,6 +116,14 @@ export function Water({ profile }: { profile: QualityProfile }) {
       u.uFogColor.value.copy(fog.color);
       u.uFogDensity.value = fog.density;
     }
+    // The mirror image, drawn before the main render (see above). It reuses the shadow map of the
+    // previous frame, so it waits until one exists; and it is skipped while the pond is out of view.
+    if (!reflect || frames.current++ < 2) return;
+    camera.updateMatrixWorld();
+    viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    frustum.setFromProjectionMatrix(viewProjection);
+    bounds.copy(mesh.geometry.boundingSphere!).applyMatrix4(mesh.matrixWorld);
+    if (frustum.intersectsSphere(bounds)) reflect.call(mesh, gl, scene, camera);
   });
 
   return <primitive object={mesh} />;

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CABIN, CLEARING, POND, WALKER_RADIUS, WATER_LEVEL, cabinToWorld } from './layout';
 import { BRIDGE, pondDepth, pondOutline, pondPoint, pondSDF } from './pond';
 import { groundHeight, walkHeight } from './terrain';
-import { GRAVEL_PATHS, STONE_PATHS, distToPaths } from './paths';
+import { GRAVEL_PATHS, PATH_HALF_WIDTH, PATIO, STONE_PATHS, distToGravelPath, distToPaths, distToStonePath, type Pt } from './paths';
 import { surfaceAt } from './surfaces';
 import { inCabinFootprint, moveWalker, nearestFree, resolve } from './colliders';
 import { SCATTER } from './scatter';
@@ -79,6 +79,40 @@ describe('surfaces', () => {
 });
 
 describe('paths', () => {
+  /** The plain definition: nearest point on any segment of the line. */
+  const bruteForce = (x: number, z: number, pts: Pt[]): number => {
+    let best = Infinity;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [ax, az] = pts[i];
+      const [bx, bz] = pts[i + 1];
+      const abx = bx - ax;
+      const abz = bz - az;
+      const t = Math.min(1, Math.max(0, ((x - ax) * abx + (z - az) * abz) / (abx * abx + abz * abz || 1)));
+      best = Math.min(best, Math.hypot(x - (ax + abx * t), z - (az + abz * t)));
+    }
+    return best;
+  };
+
+  it('measures distance exactly, however the search is organised', () => {
+    // the ground mask and the grass ask this question for every texel and every tuft
+    for (let x = -24; x <= 24; x += 0.37) {
+      for (let z = -22; z <= 26; z += 0.41) {
+        const stone = Math.min(Math.hypot(x - PATIO.x, z - PATIO.z) - PATIO.radius + PATH_HALF_WIDTH, ...STONE_PATHS.map((p) => bruteForce(x, z, p)));
+        const gravel = Math.min(...GRAVEL_PATHS.map((p) => bruteForce(x, z, p)));
+        const far = distToStonePath(x, z) === 99;
+        if (far) {
+          // "far away" is only ever reported well clear of every path
+          expect(Math.min(stone, gravel)).toBeGreaterThan(6);
+          expect(distToGravelPath(x, z)).toBe(99);
+        } else {
+          expect(distToStonePath(x, z)).toBeCloseTo(stone, 9);
+          expect(distToGravelPath(x, z)).toBeCloseTo(gravel, 9);
+          expect(distToPaths(x, z)).toBeCloseTo(Math.min(stone, gravel), 9);
+        }
+      }
+    }
+  });
+
   it('never cross the water or the cabin', () => {
     for (const path of [...GRAVEL_PATHS, ...STONE_PATHS]) {
       for (const [x, z] of path) {

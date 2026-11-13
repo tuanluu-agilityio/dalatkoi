@@ -1,5 +1,5 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Suspense, useEffect, useRef } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { getTextureProgress, onTextureProgress, texturesSettled } from '../assets/textureManager';
 import { QUALITY } from '../config/quality';
@@ -58,6 +58,55 @@ function ReadySignal() {
   return null;
 }
 
+/** Longest the first frame waits for shaders. After this the scene is drawn anyway, compiling as it goes. */
+const WARM_TIMEOUT = 25000;
+
+/**
+ * Compiles the scene's shader programs before the first frame is drawn.
+ *
+ * Drawn cold, the first frame compiles and links some seventy programs one after another and
+ * waits for each: a single task of about ten seconds during which the page cannot repaint or
+ * respond. Asked for ahead of time, the driver compiles them in parallel (where the browser has
+ * `KHR_parallel_shader_compile`) while the title screen stays alive, and the frame loop starts
+ * when they are ready.
+ */
+function Warmup({ post, onReady }: { post: boolean; onReady: () => void }): null {
+  const gl = useThree((s) => s.gl);
+  const scene = useThree((s) => s.scene);
+  const camera = useThree((s) => s.camera);
+  useEffect(() => {
+    let alive = true;
+    const finish = () => {
+      if (!alive) return;
+      alive = false;
+      clearTimeout(timer);
+      onReady();
+    };
+    const timer = setTimeout(finish, WARM_TIMEOUT);
+    // With post-processing the scene is drawn into a linear half-float buffer, not onto the
+    // canvas, and that decides which variant of each program is needed. Compile for the same.
+    const target = post ? new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType }) : null;
+    const previous = gl.getRenderTarget();
+    try {
+      gl.setRenderTarget(target);
+      gl.compileAsync(scene, camera).then(finish, finish);
+    } catch (error) {
+      console.warn('[scene] could not precompile shaders', error);
+      finish();
+    } finally {
+      gl.setRenderTarget(previous);
+    }
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+      target?.dispose();
+    };
+    // once per scene build: the Canvas is rebuilt, and this with it, when the quality changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
+}
+
 /**
  * Reports a lost graphics context so the app can show its fallback. The listener is removed when
  * the scene unmounts: rebuilding for a new quality level deliberately releases the old context,
@@ -99,6 +148,8 @@ export default function Experience() {
   const dprScale = useStore((s) => s.dprScale);
   const profile = QUALITY[quality];
   const dpr = Math.min(window.devicePixelRatio || 1, profile.dpr) * dprScale;
+  // the frame loop of each scene build starts once its shaders are compiled
+  const [warm, setWarm] = useState<string | null>(null);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -108,7 +159,10 @@ export default function Experience() {
   return (
     <Canvas
       key={quality}
-      shadows
+      // three.js no longer has the "soft" type r3f asks for by default and swaps it for this one at
+      // the first shadow render, which is too late for the programs compiled ahead of the first frame
+      shadows="percentage"
+      frameloop={warm === quality ? 'always' : 'never'}
       dpr={dpr}
       gl={{ antialias: !profile.smaa, powerPreference: 'high-performance', stencil: false, alpha: false }}
       camera={{ fov: 55, near: 0.08, far: 1400, position: [SPAWN.x, EYE_HEIGHT, SPAWN.z] }}
@@ -148,6 +202,7 @@ export default function Experience() {
       <PerformanceManager />
       <ReadySignal />
       <ContextGuard />
+      <Warmup post={profile.post && !OFF.has('post')} onReady={() => setWarm(quality)} />
     </Canvas>
   );
 }

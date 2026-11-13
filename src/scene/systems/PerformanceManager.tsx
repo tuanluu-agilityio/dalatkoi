@@ -1,6 +1,6 @@
-import { useFrame } from '@react-three/fiber';
-import { useRef } from 'react';
-import { adaptQuality } from '../../config/adapt';
+import { useFrame, useThree } from '@react-three/fiber';
+import { useEffect, useRef } from 'react';
+import { adaptQuality, initialAdapt } from '../../config/adapt';
 import { runtime } from '../../state/runtime';
 import { useStore } from '../../state/store';
 
@@ -14,9 +14,30 @@ const WARMUP = 5;
  * statistics for the on-screen readout.
  */
 export function PerformanceManager(): null {
-  const acc = useRef({ time: 0, frames: 0, age: 0, good: 0 });
+  const gl = useThree((s) => s.gl);
+  const quality = useStore((s) => s.quality);
+  const acc = useRef({ time: 0, frames: 0, age: 0, calls: 0, triangles: 0, adapt: initialAdapt(quality) });
 
-  useFrame(({ gl }, delta) => {
+  // A frame is several passes (shadows, the pond's reflection, the scene, each post-processing
+  // step) and the renderer resets its counters at every one, so on its own it reports only the
+  // last: one full-screen triangle. Count the whole frame instead.
+  useEffect(() => {
+    const previous = gl.info.autoReset;
+    gl.info.autoReset = false;
+    return () => {
+      gl.info.autoReset = previous;
+    };
+  }, [gl]);
+
+  // Before anything else draws this frame: what the previous frame came to.
+  useFrame(() => {
+    const a = acc.current;
+    a.calls = gl.info.render.calls;
+    a.triangles = gl.info.render.triangles;
+    gl.info.reset();
+  }, -1000);
+
+  useFrame((_, delta) => {
     const a = acc.current;
     // a stall (tab in the background, a debugger pause) is not a slow frame
     if (delta > 0.5 || document.hidden) {
@@ -33,13 +54,15 @@ export function PerformanceManager(): null {
     a.time = 0;
     a.frames = 0;
     runtime.fps = fps;
-    runtime.drawCalls = gl.info.render.calls;
-    runtime.triangles = gl.info.render.triangles;
+    runtime.drawCalls = a.calls;
+    runtime.triangles = a.triangles;
 
     const s = useStore.getState();
     if (!s.autoQuality || s.phase === 'loading' || a.age < WARMUP) return;
-    const next = adaptQuality({ level: s.quality, dprScale: s.dprScale, goodWindows: a.good }, fps);
-    a.good = next.goodWindows;
+    // the store is the authority on level and resolution: the visitor may have changed either
+    const current = a.adapt.level === s.quality && a.adapt.dprScale === s.dprScale ? a.adapt : { ...initialAdapt(s.quality), dprScale: s.dprScale };
+    const next = adaptQuality(current, fps);
+    a.adapt = next;
     if (next.level !== s.quality) {
       // the scene is rebuilt for the new profile; give it time to settle again
       a.age = 0;

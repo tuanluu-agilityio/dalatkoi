@@ -86,9 +86,11 @@ and `TECHNICAL_DECISIONS.md` for the reasoning behind the main choices.
 ## Quality levels and performance
 
 The starting level is chosen from the device (GPU name, touch, memory, cores). On **Auto** the
-frame rate is measured continuously: below 30 fps the render resolution is lowered in steps to
-60%, and if that is not enough the level steps down. Resolution is restored when there is
-headroom. The level can be fixed by hand in the Graphics panel.
+frame rate is measured continuously: below 26 fps the render resolution is lowered in steps to
+60%, and if that is not enough the level steps down. Between 26 and 45 fps a lower resolution is
+tried and kept only if the frame rate improves, so a display capped at 30 fps keeps its full
+resolution. Resolution is restored when there is headroom. The level can be fixed by hand in the
+Graphics panel.
 
 | Level | Pixel ratio cap | Shadows | Reflection | Post-processing | Grass tufts | Pines | Koi |
 |---|---|---|---|---|---|---|---|

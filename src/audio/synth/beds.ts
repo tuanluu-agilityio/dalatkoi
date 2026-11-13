@@ -14,6 +14,21 @@ const loop = (ctx: AudioContext, buffer: AudioBuffer, offset: number): AudioBuff
 };
 
 /**
+ * Moves a group of parameters toward a target, smoothly, and only when the target has moved.
+ * An unchanged target schedules nothing: every scheduled event costs the audio thread a little,
+ * and a parameter with events pending is computed for every sample instead of once per block.
+ */
+function steered(ctx: AudioContext, params: AudioParam[], timeConstant: number, tolerance: number): (value: number) => void {
+  let last = Number.NaN;
+  return (value) => {
+    if (Math.abs(value - last) <= tolerance) return;
+    last = value;
+    const t = ctx.currentTime;
+    for (const p of params) p.setTargetAtTime(value, t, timeConstant);
+  };
+}
+
+/**
  * Wind: a low body that is always there, plus the hiss of needles that rises
  * with each gust. Two decorrelated copies are panned apart for width.
  */
@@ -48,12 +63,14 @@ export function createWind(ctx: AudioContext, out: AudioNode, pink: AudioBuffer)
     hiss.connect(panner);
     panner.connect(out);
   });
+  const body = steered(ctx, bodies.map((g) => g.gain), 0.8, 0.001);
+  const hiss = steered(ctx, hisses.map((g) => g.gain), 0.6, 0.0005);
+  const tone = steered(ctx, hissFilters.map((f) => f.frequency), 0.9, 8);
   return {
     update(gust) {
-      const t = ctx.currentTime;
-      for (const g of bodies) g.gain.setTargetAtTime(0.1 + 0.2 * gust, t, 0.8);
-      for (const g of hisses) g.gain.setTargetAtTime(0.012 + 0.1 * Math.pow(gust, 1.6), t, 0.6);
-      for (const f of hissFilters) f.frequency.setTargetAtTime(2500 + 1900 * gust, t, 0.9);
+      body(0.1 + 0.2 * gust);
+      hiss(0.012 + 0.1 * Math.pow(gust, 1.6));
+      tone(2500 + 1900 * gust);
     },
   };
 }
@@ -154,20 +171,18 @@ export function createRain(ctx: AudioContext, out: RainOutputs, b: Buffers): Rai
     return gain;
   };
 
-  const wash = [-0.7, 0.7].map((pan, i) => layer(b.pink, 0.4 + i * 2.1, [['highpass', 480, 0.5], ['lowpass', 7600, 0.5]], out.around, pan));
-  const leaves = [-0.5, 0.5].map((pan, i) => layer(b.white, 0.2 + i * 1.3, [['bandpass', 5600, 0.5]], out.around, pan));
-  const overhead = [
+  const group = (gains: GainNode[]) => steered(ctx, gains.map((g) => g.gain), 0.4, 0.0005);
+  const wash = group([-0.7, 0.7].map((pan, i) => layer(b.pink, 0.4 + i * 2.1, [['highpass', 480, 0.5], ['lowpass', 7600, 0.5]], out.around, pan)));
+  const leaves = group([-0.5, 0.5].map((pan, i) => layer(b.white, 0.2 + i * 1.3, [['bandpass', 5600, 0.5]], out.around, pan)));
+  const overhead = group([
     layer(b.brown, 2.2, [['bandpass', 360, 0.7]], out.around),
     layer(b.pink, 3.1, [['bandpass', 1350, 0.9]], out.around),
-  ];
-  const roof = out.roof ? [layer(b.pink, 1.6, [['bandpass', 1100, 0.8]], out.roof)] : [];
-  const wood = out.wood ? [layer(b.pink, 2.8, [['bandpass', 1900, 1.4]], out.wood), layer(b.brown, 0.9, [['bandpass', 300, 1.2]], out.wood)] : [];
-  const pond = out.pond ? [layer(b.white, 1.9, [['highpass', 4200, 0.6]], out.pond)] : [];
+  ]);
+  const roof = group(out.roof ? [layer(b.pink, 1.6, [['bandpass', 1100, 0.8]], out.roof)] : []);
+  const wood = group(out.wood ? [layer(b.pink, 2.8, [['bandpass', 1900, 1.4]], out.wood), layer(b.brown, 0.9, [['bandpass', 300, 1.2]], out.wood)] : []);
+  const pond = group(out.pond ? [layer(b.white, 1.9, [['highpass', 4200, 0.6]], out.pond)] : []);
 
-  const set = (gains: GainNode[], value: number) => {
-    const t = ctx.currentTime;
-    for (const g of gains) g.gain.setTargetAtTime(Math.max(0, value), t, 0.4);
-  };
+  const set = (steer: (value: number) => void, value: number) => steer(Math.max(0, value));
   return {
     update({ amount, level, roof: cover, indoors, gust }) {
       const open = 1 - 0.3 * cover - 0.45 * indoors;

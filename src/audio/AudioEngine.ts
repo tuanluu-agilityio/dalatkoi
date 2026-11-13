@@ -1,6 +1,7 @@
 import type { VolumeBus } from '../state/store';
 import type { Surface } from '../world/surfaces';
 import { createRain, createSpout, createWind, type Bed, type RainBed } from './synth/beds';
+import { LANE_PANS, laneFor, placeSound, type Placement } from './spatial';
 import { impulseResponse, noiseBuffer } from './synth/noise';
 import { birdsong, chime, creak, drip, footstep, plop, raindrop, thunder, type Buffers, type Raindrop } from './synth/voices';
 
@@ -77,6 +78,18 @@ export function busGains(volumes: Volumes, muted: boolean): Volumes {
   };
 }
 
+/**
+ * Output buffering asked of the browser, in seconds. This is an ambient soundscape, not an
+ * instrument: a few hundredths of a second of extra latency cannot be heard, and it is what lets
+ * the audio thread ride out a busy frame without a dropout. ('interactive' gave 10 ms buffers,
+ * which underran whenever rendering was heavy.) A number rather than 'playback', because
+ * 'playback' means very different sizes on different systems and footsteps should stay in step.
+ */
+const OUTPUT_LATENCY = 0.04;
+/** Seconds between adjustments of the continuous layers. Their own smoothing is 0.25 s or slower. */
+const CONTROL_INTERVAL = 0.1;
+/** A finished voice stays connected this much longer, so nothing is cut while it rings out. */
+const RELEASE_MARGIN = 0.5;
 const MAX_VOICES = 18;
 /** Rain's one-shots have a budget of their own, so a downpour never crowds out a footstep. */
 const MAX_RAIN_VOICES = 8;
@@ -115,6 +128,31 @@ export class AudioEngine {
   private weather: WeatherSignals = DRY;
   private rainVoices: number[] = [];
   private rainTimers = { eave: 0.5, pond: 0.3, leaf: 0.4, wood: 0.6 };
+  /** Fixed stereo positions that short placed sounds share, instead of a panner each. */
+  private lanes: AudioNode[] = [];
+  private placement: Placement = { pan: 0, gain: 1 };
+  /** Where the listener was at the last update: short sounds are placed against it. */
+  private pose: ListenerPose = { x: 0, y: 1.65, z: 0, fx: 0, fy: 0, fz: -1 };
+  private heard = [Number.NaN, 0, 0, 0, 0, 0];
+  /** Nodes built for one voice, to be taken out of the graph when it has finished. */
+  private live: { end: number; nodes: AudioNode[] }[] = [];
+  /** Seconds until the continuous layers are adjusted again. */
+  private control = 0;
+  private muffleAt = 18000;
+  /** False while the app itself has suspended the sound (a hidden tab). */
+  private wantRunning = false;
+  private autoResumes = 0;
+  private readonly onState = () => {
+    const ctx = this.ctx;
+    if (!ctx || !this.wantRunning || ctx.state === 'running' || ctx.state === 'closed') return;
+    // the browser stopped it (a call, a device change): ask a few times at most, never in a loop
+    if (this.autoResumes++ < 3) void ctx.resume().catch(() => undefined);
+  };
+
+  /** 'off' before `start`, otherwise the state of the context. */
+  get state(): 'off' | AudioContextState {
+    return this.ctx ? this.ctx.state : 'off';
+  }
 
   /** Where the fixed sources are. Takes effect for sources created after the call, so set it before `start`. */
   setSources(sources: SoundSources): void {
@@ -127,18 +165,23 @@ export class AudioEngine {
     try {
       const ctx = factory
         ? factory()
-        : new (window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)({ latencyHint: 'interactive' });
+        : new (window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)({ latencyHint: OUTPUT_LATENCY });
       this.ctx = ctx;
       this.build(ctx);
       this.started = true;
-      void ctx.resume?.();
+      this.wantRunning = true;
+      this.autoResumes = 0;
+      ctx.addEventListener?.('statechange', this.onState);
+      if (ctx.state !== 'running') void ctx.resume?.();
       return true;
     } catch (error) {
       console.warn('[audio] unavailable, continuing without sound', error);
       void this.ctx?.close?.().catch(() => undefined);
       this.ctx = null;
       this.buses = null;
+      this.lanes = [];
       this.started = false;
+      this.wantRunning = false;
       return false;
     }
   }
@@ -204,6 +247,12 @@ export class AudioEngine {
       { around: rain, roof: at(this.sources.roof, 4.5, 1.3), wood: at(this.sources.bridge, 2.2, 1.6), pond: at(this.sources.pond, 3.5, 1.5) },
       this.buffers,
     );
+    this.lanes = LANE_PANS.map((pan) => {
+      const lane = ctx.createStereoPanner();
+      lane.pan.value = pan;
+      lane.connect(rain);
+      return lane;
+    });
     this.thunderOut = ctx.createGain();
     this.thunderOut.gain.value = this.thunderOn ? 1 : 0;
     this.thunderOut.connect(master);
@@ -238,29 +287,49 @@ export class AudioEngine {
     return p;
   }
 
-  /** A one-shot positioned source feeding the environment bus and the shared reverb. */
-  private placed(x: number, y: number, z: number, refDistance: number, send: number): AudioNode | null {
+  /**
+   * A one-shot positioned source feeding the environment bus and the shared reverb, lasting
+   * `duration` seconds. Null when too many voices are already sounding. The nodes are taken out
+   * of the graph again by `sweep` once the voice has finished.
+   */
+  private placed(duration: number, x: number, y: number, z: number, refDistance: number, send: number): AudioNode | null {
+    if (!this.buses || !this.reverb || !this.ctx || !this.claim(duration)) return null;
     const p = this.panner(x, y, z, refDistance, 1.1);
-    if (!p || !this.buses || !this.reverb || !this.ctx) return null;
+    if (!p) return null;
     p.connect(this.buses.environment);
     const s = this.ctx.createGain();
     s.gain.value = send;
     p.connect(s);
     s.connect(this.reverb);
+    this.live.push({ end: this.ctx.currentTime + duration + RELEASE_MARGIN, nodes: [p, s] });
     return p;
   }
 
-  /** A raindrop landing at a point: cheaper panning than the other voices, and routed through the rain bus. */
+  /** Disconnects what finished voices left behind, rather than waiting for garbage collection to do it. */
+  private sweep(now: number): void {
+    const live = this.live;
+    for (let i = live.length - 1; i >= 0; i--) {
+      if (live[i].end > now) continue;
+      for (const node of live[i].nodes) node.disconnect();
+      live[i] = live[live.length - 1];
+      live.pop();
+    }
+  }
+
+  /**
+   * A raindrop landing at a point, routed through the rain bus. A drop lasts about a tenth of a
+   * second, so its place is worked out once, here, with the same law a panner applies, and it
+   * plays through the nearest of a few fixed stereo positions. A panner per drop (about 25 a
+   * second) was what the audio thread could not keep up with.
+   */
   private rainDrop(kind: Raindrop, x: number, y: number, z: number, refDistance: number): void {
     const ctx = this.ctx;
-    if (!ctx || !this.buses || !this.buffers) return;
+    if (!ctx || !this.buses || !this.buffers || this.lanes.length === 0) return;
     const now = ctx.currentTime;
     this.rainVoices = this.rainVoices.filter((end) => end > now);
     if (this.rainVoices.length >= MAX_RAIN_VOICES) return;
-    const p = this.panner(x, y, z, refDistance, 1.3, 'equalpower');
-    if (!p) return;
-    p.connect(this.buses.rain);
-    this.rainVoices.push(now + raindrop(ctx, p, this.buffers, kind));
+    const at = placeSound(this.pose, x, y, z, refDistance, 1.3, this.placement);
+    this.rainVoices.push(now + raindrop(ctx, this.lanes[laneFor(at.pan)], this.buffers, kind, at.gain));
   }
 
   /** Reserve a voice. False when too many one-shots are already sounding. */
@@ -309,11 +378,44 @@ export class AudioEngine {
     pan.connect(this.thunderOut);
     // a roof takes the edge off it; walls take more
     const heard = clamp01(strength) * (1 - 0.15 * this.weather.roof - 0.3 * this.weather.indoors);
-    thunder(ctx, pan, this.buffers, heard, Number.isFinite(delay) ? Math.max(0, delay) : 0);
+    const length = thunder(ctx, pan, this.buffers, heard, Number.isFinite(delay) ? Math.max(0, delay) : 0);
+    this.live.push({ end: ctx.currentTime + length + RELEASE_MARGIN, nodes: [pan] });
+  }
+
+  /**
+   * The listener follows the camera. Values are set directly, once per frame and only when they
+   * have changed: scheduling them (`setTargetAtTime`) makes them sample-accurate, and then every
+   * panner in the graph recomputes its position 48 000 times a second.
+   */
+  private moveListener(pose: ListenerPose): void {
+    const h = this.heard;
+    const eps = 1e-4;
+    const same =
+      Math.abs(h[0] - pose.x) < eps && Math.abs(h[1] - pose.y) < eps && Math.abs(h[2] - pose.z) < eps &&
+      Math.abs(h[3] - pose.fx) < eps && Math.abs(h[4] - pose.fy) < eps && Math.abs(h[5] - pose.fz) < eps;
+    if (same) return;
+    h[0] = pose.x;
+    h[1] = pose.y;
+    h[2] = pose.z;
+    h[3] = pose.fx;
+    h[4] = pose.fy;
+    h[5] = pose.fz;
+    const l = this.ctx!.listener;
+    if (l.positionX) {
+      l.positionX.value = pose.x;
+      l.positionY.value = pose.y;
+      l.positionZ.value = pose.z;
+      l.forwardX.value = pose.fx;
+      l.forwardY.value = pose.fy;
+      l.forwardZ.value = pose.fz;
+    } else {
+      l.setPosition(pose.x, pose.y, pose.z);
+      l.setOrientation(pose.fx, pose.fy, pose.fz, 0, 1, 0);
+    }
   }
 
   /** Rain: the continuous layers, the shelter filter, and single drops landing around the listener. */
-  private updateRain(step: number, pose: ListenerPose, gust: number): void {
+  private updateRain(step: number, pose: ListenerPose, gust: number, steer: boolean): void {
     const ctx = this.ctx;
     if (!ctx || !this.rainBed || !this.rainMuffle) return;
     const w = this.weather;
@@ -321,8 +423,14 @@ export class AudioEngine {
     const level = clamp01(w.level);
     const roof = clamp01(w.roof);
     const indoors = clamp01(w.indoors);
-    this.rainBed.update({ amount, level, roof, indoors, gust });
-    this.rainMuffle.frequency.setTargetAtTime(lerp(lerp(18000, 6500, roof), 950, indoors), ctx.currentTime, 0.25);
+    if (steer) {
+      this.rainBed.update({ amount, level, roof, indoors, gust });
+      const cutoff = lerp(lerp(18000, 6500, roof), 950, indoors);
+      if (Math.abs(cutoff - this.muffleAt) > 1) {
+        this.muffleAt = cutoff;
+        this.rainMuffle.frequency.setTargetAtTime(cutoff, ctx.currentTime, 0.25);
+      }
+    }
 
     const pace = 0.35 + level;
     const timers = this.rainTimers;
@@ -364,26 +472,28 @@ export class AudioEngine {
     if (!ctx || !this.buses || !this.buffers || ctx.state !== 'running') return;
     const step = Number.isFinite(dt) ? Math.min(0.25, Math.max(0, dt)) : 0;
 
-    const l = ctx.listener;
-    if (l.positionX) {
-      const t = ctx.currentTime;
-      l.positionX.setTargetAtTime(pose.x, t, 0.03);
-      l.positionY.setTargetAtTime(pose.y, t, 0.03);
-      l.positionZ.setTargetAtTime(pose.z, t, 0.03);
-      l.forwardX.setTargetAtTime(pose.fx, t, 0.03);
-      l.forwardY.setTargetAtTime(pose.fy, t, 0.03);
-      l.forwardZ.setTargetAtTime(pose.fz, t, 0.03);
-      l.upX.value = 0;
-      l.upY.value = 1;
-      l.upZ.value = 0;
-    } else {
-      l.setPosition(pose.x, pose.y, pose.z);
-      l.setOrientation(pose.fx, pose.fy, pose.fz, 0, 1, 0);
+    if (Number.isFinite(pose.x + pose.y + pose.z + pose.fx + pose.fy + pose.fz)) {
+      const p = this.pose;
+      p.x = pose.x;
+      p.y = pose.y;
+      p.z = pose.z;
+      p.fx = pose.fx;
+      p.fy = pose.fy;
+      p.fz = pose.fz;
+      this.moveListener(p);
     }
+    this.sweep(ctx.currentTime);
 
+    // the continuous layers smooth their own changes over a quarter of a second or more,
+    // so they are steered ten times a second, not once per frame
     const gust = clamp01(world.gust);
-    this.wind?.update(gust);
-    this.updateRain(step, pose, gust);
+    this.control -= step;
+    const steer = this.control <= 0;
+    if (steer) {
+      this.control = CONTROL_INTERVAL;
+      this.wind?.update(gust);
+    }
+    this.updateRain(step, pose, gust, steer);
     const rain = clamp01(this.weather.rain);
 
     const timers = this.timers;
@@ -394,7 +504,7 @@ export class AudioEngine {
       // somewhere up in the crowns around the clearing
       const a = Math.random() * Math.PI * 2;
       const d = rand(14, 44);
-      const out = this.claim(2) ? this.placed(Math.cos(a) * d, rand(7, 19), 2 + Math.sin(a) * d, 9, 0.5) : null;
+      const out = this.placed(2, Math.cos(a) * d, rand(7, 19), 2 + Math.sin(a) * d, 9, 0.5);
       if (out) birdsong(ctx, out, rand(0.16, 0.34) * (1 - 0.45 * rain));
     }
 
@@ -410,7 +520,7 @@ export class AudioEngine {
       timers.chime = gust > 0.55 ? rand(0.5, 3.2) / (0.4 + gust) : rand(2, 5);
       if (gust > 0.55 && Math.random() < 0.75) {
         const [x, y, z] = this.sources.chime;
-        const out = this.claim(2.9) ? this.placed(x, y, z, 2.2, 0.35) : null;
+        const out = this.placed(2.9, x, y, z, 2.2, 0.35);
         if (out) chime(ctx, out, rand(0.05, 0.11) * (0.6 + gust));
       }
     }
@@ -419,7 +529,7 @@ export class AudioEngine {
     if (timers.creak <= 0) {
       timers.creak = rand(16, 42);
       const [x, y, z] = this.sources.cabin;
-      const out = this.claim(1) ? this.placed(x + rand(-3, 3), y, z + rand(-2, 2), 2.5, 0.2) : null;
+      const out = this.placed(1, x + rand(-3, 3), y, z + rand(-2, 2), 2.5, 0.2);
       if (out) creak(ctx, out, rand(0.05, 0.1));
     }
   }
@@ -437,20 +547,41 @@ export class AudioEngine {
   plop(x: number, z: number, strength: number): void {
     const ctx = this.ctx;
     if (!ctx || !this.buffers) return;
-    const out = this.claim(0.35) ? this.placed(x, this.sources.waterLevel, z, 2.6, 0.3) : null;
+    const out = this.placed(0.35, x, this.sources.waterLevel, z, 2.6, 0.3);
     if (out) plop(ctx, out, this.buffers, strength);
   }
 
+  /** The app wants silence for now (the tab is hidden). */
   suspend(): void {
+    this.wantRunning = false;
     if (this.ctx && this.ctx.state === 'running') void this.ctx.suspend();
   }
 
   resume(): void {
+    if (!this.ctx) return;
+    this.wantRunning = true;
+    this.autoResumes = 0;
     // 'interrupted' is what iOS reports after a call or Siri
-    if (this.ctx && this.ctx.state !== 'running' && this.ctx.state !== 'closed') void this.ctx.resume();
+    if (this.ctx.state !== 'running' && this.ctx.state !== 'closed') void this.ctx.resume().catch(() => undefined);
+  }
+
+  /**
+   * Call from any click or key press. If the browser has stopped the sound and would not let it
+   * resume without a gesture, this is the gesture. Checks the state first; does nothing otherwise.
+   */
+  nudge(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.wantRunning || ctx.state === 'running' || ctx.state === 'closed') return;
+    this.autoResumes = 0;
+    void ctx.resume().catch(() => undefined);
   }
 
   dispose(): void {
+    this.ctx?.removeEventListener?.('statechange', this.onState);
+    this.wantRunning = false;
+    this.lanes = [];
+    this.live = [];
+    this.heard[0] = Number.NaN;
     void this.ctx?.close?.();
     this.ctx = null;
     this.buses = null;
