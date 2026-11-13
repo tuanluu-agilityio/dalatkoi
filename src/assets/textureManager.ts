@@ -39,9 +39,11 @@ export function texturesSettled(): Promise<void> {
   });
 }
 
-const images = new Map<string, Promise<HTMLImageElement | null>>();
+type Picture = ImageBitmap | HTMLImageElement;
 
-function loadImage(url: string): Promise<HTMLImageElement> {
+const images = new Map<string, Promise<Picture | null>>();
+
+function loadElement(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.decoding = 'async';
@@ -51,13 +53,34 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-function requestImage(name: PBRName, channel: Channel): Promise<HTMLImageElement | null> {
+/**
+ * Fetches and decodes a texture file. Decoding goes through `createImageBitmap`, which works off
+ * the main thread: an `<img>` handed to WebGL is decoded synchronously at upload, and for 27
+ * files that was more than a second of frozen page on the first frame. The bitmap is flipped
+ * here, because WebGL's flip-on-upload does not apply to bitmaps. Browsers without the API, or
+ * without these options, fall back to the image element.
+ */
+async function loadImage(url: string): Promise<Picture> {
+  if (typeof createImageBitmap === 'function' && typeof fetch === 'function') {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`failed to load ${url} (${response.status})`);
+    const blob = await response.blob();
+    try {
+      return await createImageBitmap(blob, { imageOrientation: 'flipY', premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+    } catch {
+      // decoded some other way below
+    }
+  }
+  return loadElement(url);
+}
+
+function requestImage(name: PBRName, channel: Channel): Promise<Picture | null> {
   const url = `${import.meta.env.BASE_URL}textures/${name}_${channel}.webp`;
   let pending = images.get(url);
   if (!pending) {
     progress.total++;
     notify();
-    pending = loadOrFallback<HTMLImageElement | null>(() => loadImage(url), null).then((result) => {
+    pending = loadOrFallback<Picture | null>(() => loadImage(url), null).then((result) => {
       progress.done++;
       if (!result.fromFile) progress.failed++;
       notify();
@@ -70,7 +93,7 @@ function requestImage(name: PBRName, channel: Channel): Promise<HTMLImageElement
 
 function makeTexture(name: PBRName, channel: Channel, repeat: [number, number], anisotropy: number): THREE.Texture {
   const fallback = channel === 'diff' ? fallbackAlbedo(name) : channel === 'nor' ? fallbackNormal() : fallbackArm();
-  const tex = new THREE.Texture<HTMLCanvasElement | HTMLImageElement>(fallback);
+  const tex = new THREE.Texture<HTMLCanvasElement | Picture>(fallback);
   tex.colorSpace = channel === 'diff' ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(repeat[0], repeat[1]);
@@ -81,6 +104,8 @@ function makeTexture(name: PBRName, channel: Channel, repeat: [number, number], 
     // Release the GPU copy of the fallback first: its size differs from the file's.
     tex.dispose();
     tex.image = img;
+    // a bitmap arrives already flipped (see loadImage)
+    tex.flipY = !(typeof ImageBitmap !== 'undefined' && img instanceof ImageBitmap);
     tex.needsUpdate = true;
   });
   return tex;

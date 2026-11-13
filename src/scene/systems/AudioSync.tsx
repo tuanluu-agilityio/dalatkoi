@@ -15,6 +15,8 @@ import { SPOUT_LANDING } from '../pond/Spout';
 export function AudioSync(): null {
   const forward = useRef(new THREE.Vector3());
   const weather = useRef({ rain: 0, level: 0, wet: 0, roof: 0, indoors: 0 });
+  const pose = useRef({ x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: -1 });
+  const signals = useRef({ gust: 0, walkSpeed: 0, embodied: false });
 
   useEffect(() => {
     const [chimeX, chimeZ] = cabinToWorld(CHIME[0], CHIME[2]);
@@ -48,7 +50,13 @@ export function AudioSync(): null {
     const offFish = events.on('fishSurface', (e) => audio.plop(e.x, e.z, e.strength));
     const onVisibility = () => (document.hidden ? audio.suspend() : audio.resume());
     document.addEventListener('visibilitychange', onVisibility);
+    // if the browser has stopped the sound and wants a gesture before it resumes, any of these is one
+    const onGesture = () => audio.nudge();
+    window.addEventListener('pointerdown', onGesture);
+    window.addEventListener('keydown', onGesture);
     return () => {
+      window.removeEventListener('pointerdown', onGesture);
+      window.removeEventListener('keydown', onGesture);
       offStore();
       offStep();
       offFish();
@@ -67,11 +75,18 @@ export function AudioSync(): null {
     w.roof = runtime.shelter;
     w.indoors = runtime.indoors;
     audio.setWeather(w);
-    audio.update(
-      delta,
-      { x: camera.position.x, y: camera.position.y, z: camera.position.z, fx: forward.current.x, fy: forward.current.y, fz: forward.current.z },
-      { gust: runtime.gust, walkSpeed: runtime.walkSpeed, embodied: runtime.embodied },
-    );
+    const p = pose.current;
+    p.x = camera.position.x;
+    p.y = camera.position.y;
+    p.z = camera.position.z;
+    p.fx = forward.current.x;
+    p.fy = forward.current.y;
+    p.fz = forward.current.z;
+    const g = signals.current;
+    g.gust = runtime.gust;
+    g.walkSpeed = runtime.walkSpeed;
+    g.embodied = runtime.embodied;
+    audio.update(delta, p, g);
   });
 
   return null;

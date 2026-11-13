@@ -18,6 +18,14 @@ function envelope(g: AudioParam, t: number, attack: number, peak: number, decay:
   g.exponentialRampToValueAtTime(0.0001, t + attack + decay);
 }
 
+/**
+ * Takes a finished voice out of the graph as soon as its source ends. Left alone, the chain stays
+ * connected until garbage collection happens to run, and in rain that is dozens of chains a second.
+ */
+function release(source: AudioScheduledSourceNode, last: AudioNode): void {
+  source.onended = () => last.disconnect();
+}
+
 function burst(
   ctx: AudioContext,
   out: AudioNode,
@@ -39,6 +47,7 @@ function burst(
   gain.connect(out);
   src.start(t, Math.random() * 2);
   src.stop(t + o.attack + o.decay + 0.05);
+  release(src, gain);
 }
 
 function thump(ctx: AudioContext, out: AudioNode, t: number, from: number, to: number, decay: number, gain: number): void {
@@ -52,6 +61,7 @@ function thump(ctx: AudioContext, out: AudioNode, t: number, from: number, to: n
   g.connect(out);
   osc.start(t);
   osc.stop(t + decay + 0.06);
+  release(osc, g);
 }
 
 /** A footfall. Each surface has its own recipe; small random changes keep steps from sounding stamped out. */
@@ -109,23 +119,25 @@ export function plop(ctx: AudioContext, out: AudioNode, b: Buffers, strength: nu
   g.connect(out);
   osc.start(t + 0.07);
   osc.stop(t + 0.22);
+  release(osc, g);
   burst(ctx, out, b.white, t, { type: 'bandpass', freq: 2600, q: 0.9, attack: 0.004, decay: 0.16, gain: 0.12 * s });
   return 0.35;
 }
 
-/** A single water drop into the pond, for the spout. */
-export function drip(ctx: AudioContext, out: AudioNode): number {
+/** A single water drop into the pond, for the spout. `level` scales it, for a drop heard from further away. */
+export function drip(ctx: AudioContext, out: AudioNode, level = 1): number {
   const t = ctx.currentTime + 0.005;
   const f = rand(900, 2100);
   const osc = ctx.createOscillator();
   osc.frequency.setValueAtTime(f, t);
   osc.frequency.exponentialRampToValueAtTime(f * rand(1.5, 2.1), t + 0.045);
   const g = ctx.createGain();
-  envelope(g.gain, t, 0.003, rand(0.04, 0.1), 0.05);
+  envelope(g.gain, t, 0.003, rand(0.04, 0.1) * level, 0.05);
   osc.connect(g);
   g.connect(out);
   osc.start(t);
   osc.stop(t + 0.12);
+  release(osc, g);
   return 0.12;
 }
 
@@ -195,6 +207,7 @@ export function birdsong(ctx: AudioContext, out: AudioNode, loudness: number): n
   g.connect(out);
   osc.start(t0);
   osc.stop(t0 + end + 0.05);
+  release(osc, g);
   return end + 0.1;
 }
 
@@ -220,6 +233,7 @@ export function chime(ctx: AudioContext, out: AudioNode, level: number): number 
     g.connect(out);
     osc.start(t);
     osc.stop(t + decay + 0.1);
+    release(osc, g);
   }
   return 2.9;
 }
@@ -246,6 +260,7 @@ export function creak(ctx: AudioContext, out: AudioNode, level: number): number 
     osc.connect(filter);
     osc.start(t);
     osc.stop(t + length + 0.05);
+    release(osc, g);
   }
   filter.connect(g);
   g.connect(out);
@@ -254,23 +269,23 @@ export function creak(ctx: AudioContext, out: AudioNode, level: number): number 
 
 export type Raindrop = 'leaf' | 'wood' | 'water' | 'eave';
 
-/** One heavy drop landing on something nearby. */
-export function raindrop(ctx: AudioContext, out: AudioNode, b: Buffers, kind: Raindrop): number {
+/** One heavy drop landing on something nearby. `level` is how much of it reaches the listener (distance). */
+export function raindrop(ctx: AudioContext, out: AudioNode, b: Buffers, kind: Raindrop, level = 1): number {
   const t = ctx.currentTime + 0.005;
   switch (kind) {
     case 'leaf':
-      burst(ctx, out, b.white, t, { type: 'bandpass', freq: rand(3400, 7200), q: 2, attack: 0.001, decay: rand(0.02, 0.04), gain: rand(0.07, 0.14) });
+      burst(ctx, out, b.white, t, { type: 'bandpass', freq: rand(3400, 7200), q: 2, attack: 0.001, decay: rand(0.02, 0.04), gain: rand(0.07, 0.14) * level });
       return 0.08;
     case 'wood':
-      burst(ctx, out, b.brown, t, { type: 'bandpass', freq: rand(340, 620), q: 5, attack: 0.002, decay: rand(0.04, 0.07), gain: rand(0.4, 0.7) });
-      burst(ctx, out, b.white, t, { type: 'bandpass', freq: 2300, q: 1.5, attack: 0.001, decay: 0.012, gain: 0.05 });
+      burst(ctx, out, b.brown, t, { type: 'bandpass', freq: rand(340, 620), q: 5, attack: 0.002, decay: rand(0.04, 0.07), gain: rand(0.4, 0.7) * level });
+      burst(ctx, out, b.white, t, { type: 'bandpass', freq: 2300, q: 1.5, attack: 0.001, decay: 0.012, gain: 0.05 * level });
       return 0.12;
     case 'water':
-      return drip(ctx, out);
+      return drip(ctx, out, level);
     case 'eave':
       // a bead off the roof edge into the wet below: the drop, then the small slap of it landing
-      drip(ctx, out);
-      burst(ctx, out, b.pink, t + 0.01, { type: 'lowpass', freq: rand(700, 1100), q: 0.6, attack: 0.002, decay: 0.045, gain: rand(0.08, 0.16) });
+      drip(ctx, out, level);
+      burst(ctx, out, b.pink, t + 0.01, { type: 'lowpass', freq: rand(700, 1100), q: 0.6, attack: 0.002, decay: 0.045, gain: rand(0.08, 0.16) * level });
       return 0.14;
   }
 }
@@ -310,6 +325,7 @@ export function thunder(ctx: AudioContext, out: AudioNode, b: Buffers, strength:
   g.connect(out);
   src.start(t0, Math.random() * 2);
   src.stop(Math.max(t + 0.5, t0 + length) + 0.1);
+  release(src, g);
 
   thump(ctx, out, t0 + 0.04, 62, 30, 1.3, 0.45 * s);
   if (s > 0.6) burst(ctx, out, b.white, t0, { type: 'bandpass', freq: 1700, q: 0.6, attack: 0.006, decay: 0.24, gain: 0.2 * s });

@@ -149,6 +149,7 @@ describe('AudioEngine', () => {
       b.start(() => wet.ctx);
       b.setWeather(rain);
       const before = [dry.created.panner, wet.created.panner];
+      const sources = [dry.created.bufferSource, wet.created.bufferSource];
       for (let i = 0; i < 100; i++) {
         dry.advance(0.1);
         wet.advance(0.1);
@@ -157,7 +158,8 @@ describe('AudioEngine', () => {
       }
       // ten seconds: the dry engine places a few birds at most; the wet one hears drops everywhere
       expect(dry.created.panner - before[0]).toBeLessThan(12);
-      expect(wet.created.panner - before[1]).toBeGreaterThan(30);
+      expect(dry.created.bufferSource - sources[0]).toBe(0);
+      expect(wet.created.bufferSource - sources[1]).toBeGreaterThan(30);
     });
 
     it('runs a long downpour, under a roof and indoors, without errors', () => {
@@ -181,10 +183,26 @@ describe('AudioEngine', () => {
       const engine = new AudioEngine();
       engine.start(() => fake.ctx);
       engine.setWeather(rain);
-      const before = fake.created.panner;
+      const before = fake.created.bufferSource;
       // time does not advance, so nothing ever finishes
       for (let i = 0; i < 2000; i++) engine.update(0.1, listener, world);
-      expect(fake.created.panner - before).toBeLessThan(30);
+      expect(fake.created.bufferSource - before).toBeLessThan(30);
+    });
+
+    it('places drops without building a panner for each one', () => {
+      const fake = createFakeContext();
+      const engine = new AudioEngine();
+      engine.start(() => fake.ctx);
+      engine.setWeather(rain);
+      const panners = fake.created.panner;
+      const sources = fake.created.bufferSource;
+      // two seconds at 60 fps: too soon for a bird or a creak, and the gust is too weak for the chime
+      for (let i = 0; i < 120; i++) {
+        fake.advance(1 / 60);
+        engine.update(1 / 60, { ...listener, x: i * 0.02 }, { ...world, gust: 0.2 });
+      }
+      expect(fake.created.bufferSource - sources).toBeGreaterThan(10);
+      expect(fake.created.panner).toBe(panners);
     });
 
     it('makes no thunder while thunder is switched off', () => {
@@ -198,6 +216,114 @@ describe('AudioEngine', () => {
       engine.setThunderEnabled(true);
       engine.thunder(2, 1);
       expect(fake.created.bufferSource).toBeGreaterThan(before);
+    });
+  });
+
+  describe('load on the audio thread', () => {
+    it('moves the listener without scheduling automation', () => {
+      const fake = createFakeContext();
+      const engine = new AudioEngine();
+      engine.start(() => fake.ctx);
+      for (let i = 0; i < 120; i++) {
+        fake.advance(1 / 60);
+        engine.update(1 / 60, { ...listener, x: i * 0.05, fx: Math.sin(i * 0.01), fz: -Math.cos(i * 0.01) }, world);
+      }
+      // sample-accurate listener automation makes every panner in the graph recompute per sample
+      expect(fake.automation.listener ?? 0).toBe(0);
+      const l = fake.ctx.listener as unknown as { positionX: { value: number }; forwardX: { value: number } };
+      expect(l.positionX.value).toBeCloseTo(119 * 0.05, 6);
+      expect(l.forwardX.value).toBeCloseTo(Math.sin(1.19), 6);
+    });
+
+    it('steers the continuous layers at control rate, not once per frame', () => {
+      const fake = createFakeContext();
+      const engine = new AudioEngine();
+      engine.start(() => fake.ctx);
+      engine.setWeather({ rain: 1, level: 1, wet: 0, roof: 0, indoors: 0 });
+      const count = () => (fake.automation.gain ?? 0) + (fake.automation.biquad ?? 0);
+      // let the layers reach their targets first
+      for (let i = 0; i < 30; i++) {
+        fake.advance(1 / 60);
+        engine.update(1 / 60, listener, world);
+      }
+      const before = count();
+      const voices = fake.created.bufferSource + fake.created.oscillator;
+      for (let i = 0; i < 600; i++) {
+        fake.advance(1 / 60);
+        engine.update(1 / 60, listener, world);
+      }
+      // ten seconds of steady rain and steady wind: only the one-shot voices schedule anything
+      const oneShots = fake.created.bufferSource + fake.created.oscillator - voices;
+      expect(count() - before).toBeLessThanOrEqual(oneShots * 6);
+    });
+
+    it('still follows the wind and the weather when they change', () => {
+      const fake = createFakeContext();
+      const engine = new AudioEngine();
+      engine.start(() => fake.ctx);
+      for (let i = 0; i < 30; i++) {
+        fake.advance(1 / 60);
+        engine.update(1 / 60, listener, { ...world, gust: 0.2 });
+      }
+      const before = fake.automation.biquad ?? 0;
+      for (let i = 0; i < 30; i++) {
+        fake.advance(1 / 60);
+        engine.update(1 / 60, listener, { ...world, gust: 0.9 });
+      }
+      expect(fake.automation.biquad ?? 0).toBeGreaterThan(before);
+    });
+
+    it('takes a positioned voice out of the graph once it has finished', () => {
+      const fake = createFakeContext();
+      const engine = new AudioEngine();
+      engine.start(() => fake.ctx);
+      engine.plop(1, 2, 0.8);
+      engine.update(0.016, listener, world);
+      expect(fake.disconnected.panner ?? 0).toBe(0);
+      fake.advance(3);
+      engine.update(0.016, listener, world);
+      expect(fake.disconnected.panner).toBe(1);
+    });
+  });
+
+  describe('context lifecycle', () => {
+    it('comes back by itself when the browser suspends it', async () => {
+      const fake = createFakeContext();
+      const engine = new AudioEngine();
+      engine.start(() => fake.ctx);
+      fake.interrupt('interrupted');
+      await Promise.resolve();
+      expect(fake.ctx.state).toBe('running');
+    });
+
+    it('stays suspended when the app asked for that', async () => {
+      const fake = createFakeContext();
+      const engine = new AudioEngine();
+      engine.start(() => fake.ctx);
+      engine.suspend();
+      await Promise.resolve();
+      expect(fake.ctx.state).toBe('suspended');
+      // a gesture while the tab is meant to be quiet changes nothing
+      engine.nudge();
+      expect(fake.ctx.state).toBe('suspended');
+    });
+
+    it('can be woken by a gesture when the browser refused to resume on its own', () => {
+      const fake = createFakeContext();
+      const engine = new AudioEngine();
+      engine.start(() => fake.ctx);
+      // suspended without an event reaching the engine
+      (fake.ctx as unknown as { state: string }).state = 'suspended';
+      engine.nudge();
+      expect(fake.ctx.state).toBe('running');
+    });
+
+    it('reports its state for diagnostics', () => {
+      const engine = new AudioEngine();
+      expect(engine.state).toBe('off');
+      const fake = createFakeContext();
+      engine.start(() => fake.ctx);
+      expect(engine.state).toBe('running');
     });
   });
 });

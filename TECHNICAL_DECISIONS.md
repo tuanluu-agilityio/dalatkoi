@@ -101,3 +101,56 @@ graphics in recent laptop chips (no model number). Only the former are treated a
 ### TD-18 · Collision by linear scan
 The architecture first called for a uniform grid. With a few hundred shapes and one walker the
 scan costs microseconds, so the grid was not built.
+
+### TD-19 · Shaders are compiled before the first frame
+Drawn cold, the first frame compiled and linked about seventy programs one after another: a
+single task of some ten seconds in which the page could not repaint. `Warmup` in `Experience.tsx`
+calls `compileAsync` on mount and the Canvas stays on `frameloop="never"` until it resolves (or
+25 s pass), so the title screen stays alive while the driver works. Two details make the
+precompiled programs the ones actually used: the warm-up compiles against a half-float target
+when post-processing is on, and the Canvas asks for `shadows="percentage"` because three.js
+swaps r3f's default soft type at the first shadow render, which is after the warm-up.
+*Cost:* the frame loop of every scene build (including a quality change) starts a little later.
+
+### TD-20 · Textures are decoded off the main thread
+An `<img>` handed to WebGL is decoded synchronously at upload; for 27 files that froze the page
+for more than a second. Files are now fetched and decoded with `createImageBitmap` (flipped
+there, since flip-on-upload does not apply to bitmaps), with the image element as the fallback.
+
+### TD-21 · The pond's reflection is drawn from `useFrame`, not from inside the main render
+`Reflector` renders its mirror image in `onBeforeRender`, a nested render. three.js keeps a
+separate light state for nested renders, so every lit material saw the lights "change" twice a
+frame and had its program looked up again: about a quarter of the main-thread frame. `Water.tsx`
+takes the hook off the mesh and calls it before the main render, and skips it while the pond is
+outside the view frustum.
+*Cost:* the reflection uses the previous frame's shadow map, and waits two frames for one to exist.
+
+### TD-22 · Adaptive quality probes between 26 and 45 fps
+Under 26 fps resolution is still taken at once. Between 26 and 45 the cause is unknown: a GPU
+short of fill rate, or a display, power mode or browser capped at 30. So a 0.2 lower resolution
+is tried for one window and kept only if the frame rate rises by 8%; otherwise it is put back and
+the next try waits twice as long (4 windows, doubling to 64). Giving resolution back starts the
+same wait, so a borderline device does not bounce. This replaces the fixed rule "act below 30".
+
+### TD-23 · Audio: buffered output, fewer scheduled events, no panner per raindrop
+The sound broke up whenever rendering was heavy. Four changes, all in `audio/`:
+- The context asks for 40 ms of output buffering instead of `'interactive'` (10 ms buffers that
+  underran on a busy frame). An ambient scene does not need instrument latency.
+- The listener is set by value once per frame and only when it moved. Scheduling it made every
+  panner recompute its position per sample.
+- Continuous layers are steered ten times a second, and a parameter is only scheduled when its
+  target has changed (`steered` in `synth/beds.ts`).
+- A raindrop (about 25 a second) no longer gets a `PannerNode`. Its pan and distance gain are
+  computed once in `audio/spatial.ts` with the panner's own law, and it plays through the nearest
+  of nine fixed stereo lanes. Finished voices are disconnected at once instead of waiting for
+  garbage collection.
+If the browser stops the context on its own, the engine asks to resume at most three times, and
+any click or key press afterwards counts as the gesture (`nudge`).
+*Cost:* a raindrop's direction is quantised to 12° and does not follow the head during its tenth
+of a second. Like the rest of the sound, this has not been listened to.
+
+### TD-24 · Path distance through bounding boxes
+The ground mask and the grass ask for the distance to the paths about a million times while the
+scene is built. Each path is cut into runs of six segments with a bounding box; a run further
+away than the best distance so far is skipped. A test compares the result with the brute-force
+definition over the whole clearing.

@@ -52,21 +52,61 @@ export const GRAVEL_PATHS: Pt[][] = [
 export const PATH_HALF_WIDTH = 0.8;
 export const PATIO = { x: STEPS_FOOT[0], z: STEPS_FOOT[1], radius: 1.9 } as const;
 
-function distToPolyline(x: number, z: number, pts: Pt[]): number {
-  let best = Infinity;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const [ax, az] = pts[i];
-    const [bx, bz] = pts[i + 1];
-    const abx = bx - ax;
-    const abz = bz - az;
-    const len2 = abx * abx + abz * abz || 1;
-    const t = Math.min(1, Math.max(0, ((x - ax) * abx + (z - az) * abz) / len2));
-    const dx = x - (ax + abx * t);
-    const dz = z - (az + abz * t);
-    const d = dx * dx + dz * dz;
-    if (d < best) best = d;
+/**
+ * A path cut into short runs of segments, each with its bounding box. The ground mask asks for
+ * the distance to the paths once per texel and the grass once per tuft, about a million times
+ * while the scene is built; a run whose box is already further away than the best distance found
+ * so far cannot hold the answer and is skipped whole. The result is exactly the brute-force one.
+ */
+interface Run {
+  from: number;
+  to: number;
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
+const RUN_LENGTH = 6;
+
+function runsOf(pts: Pt[]): Run[] {
+  const runs: Run[] = [];
+  for (let from = 0; from < pts.length - 1; from += RUN_LENGTH) {
+    const to = Math.min(pts.length - 1, from + RUN_LENGTH);
+    const run: Run = { from, to, minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
+    for (let i = from; i <= to; i++) {
+      run.minX = Math.min(run.minX, pts[i][0]);
+      run.maxX = Math.max(run.maxX, pts[i][0]);
+      run.minZ = Math.min(run.minZ, pts[i][1]);
+      run.maxZ = Math.max(run.maxZ, pts[i][1]);
+    }
+    runs.push(run);
   }
-  return Math.sqrt(best);
+  return runs;
+}
+
+/** Squared distance from (x, z) to the nearest of `paths`, given a squared distance already known. */
+function nearest2(x: number, z: number, paths: Pt[][], runs: Run[][], best: number): number {
+  for (let p = 0; p < paths.length; p++) {
+    const pts = paths[p];
+    for (const run of runs[p]) {
+      const ox = x < run.minX ? run.minX - x : x > run.maxX ? x - run.maxX : 0;
+      const oz = z < run.minZ ? run.minZ - z : z > run.maxZ ? z - run.maxZ : 0;
+      if (ox * ox + oz * oz >= best) continue;
+      for (let i = run.from; i < run.to; i++) {
+        const a = pts[i];
+        const b = pts[i + 1];
+        const abx = b[0] - a[0];
+        const abz = b[1] - a[1];
+        const len2 = abx * abx + abz * abz || 1;
+        const t = Math.min(1, Math.max(0, ((x - a[0]) * abx + (z - a[1]) * abz) / len2));
+        const dx = x - (a[0] + abx * t);
+        const dz = z - (a[1] + abz * t);
+        const d = dx * dx + dz * dz;
+        if (d < best) best = d;
+      }
+    }
+  }
+  return best;
 }
 
 // Bounding box of all path points lets the far-away majority of queries exit early.
@@ -88,15 +128,18 @@ function outsideBounds(x: number, z: number, margin: number): boolean {
   return x < minX - margin || x > maxX + margin || z < minZ - margin || z > maxZ + margin;
 }
 
+const STONE_RUNS = STONE_PATHS.map(runsOf);
+const GRAVEL_RUNS = GRAVEL_PATHS.map(runsOf);
+
 export function distToStonePath(x: number, z: number): number {
   if (outsideBounds(x, z, 6)) return 99;
   const patio = Math.hypot(x - PATIO.x, z - PATIO.z) - PATIO.radius + PATH_HALF_WIDTH;
-  return Math.min(patio, ...STONE_PATHS.map((p) => distToPolyline(x, z, p)));
+  return Math.min(patio, Math.sqrt(nearest2(x, z, STONE_PATHS, STONE_RUNS, Infinity)));
 }
 
 export function distToGravelPath(x: number, z: number): number {
   if (outsideBounds(x, z, 6)) return 99;
-  return Math.min(...GRAVEL_PATHS.map((p) => distToPolyline(x, z, p)));
+  return Math.sqrt(nearest2(x, z, GRAVEL_PATHS, GRAVEL_RUNS, Infinity));
 }
 
 /** Distance to the centre line of the nearest path of either kind (99 when far away). */
